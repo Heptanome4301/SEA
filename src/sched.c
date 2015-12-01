@@ -85,7 +85,16 @@ void do_sys_yieldto()
 	
 }
 
+/* Cette partie n'est pas encore à l'ordre du jour
+
 void do_sys_set_scheduler() 
 {
 
 }
+
+void sys_set_scheduler()
+{
+
+
+}
+*/

@@ -16,7 +16,10 @@ pcb_s* create_process(func_t* entry);
 void sys_yieldto(pcb_s* dest);
 void do_sys_yieldto();
 
+/* Cette partie n'est pas encore à l'ordre du jour
+void sys_set_scheduler();
 void do_sys_set_scheduler();
+*/
 
 
 #endif

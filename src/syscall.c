@@ -58,11 +58,12 @@ void __attribute__((naked)) swi_handler(void)
 		case YIELDTO :
 			do_sys_yieldto();
 			break;
-
+		/*
 		case SYS_SET_SCHEDULER :
 			do_sys_set_scheduler();
 			break;
 
+*/
 		default :
 			PANIC();
 		break;
