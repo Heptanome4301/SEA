@@ -20,4 +20,8 @@ void do_sys_settime();
 uint64_t sys_gettime();
 void do_sys_gettime();
 
+void sys_yieldto(pcb_s* dest);
+void do_sys_yieldto();
+
+
 #endif

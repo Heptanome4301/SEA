@@ -11,7 +11,7 @@
 #define NOP_INT 2
 #define SYS_TIME 3
 #define SYS_TIME_GT 4
-
+#define SYS_SET_SCHEDULER 5
 
 
 

@@ -84,8 +84,3 @@ void do_sys_yieldto()
 	
 	
 }
-
-void do_sys_set_scheduler() 
-{
-
-}
