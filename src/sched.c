@@ -2,6 +2,7 @@
 #include "sched.h"
 #include "hw.h"
 
+
 pcb_s kmain_process;
 
 
@@ -15,10 +16,11 @@ void sched_init()
 
 }
 
+void create_priority_process(func_t* entry, int priority) {
+	
 
-void create_process(func_t* entry)
-{
 	pcb_s* res = (pcb_s*)kAlloc(sizeof(pcb_s));
+	res -> PRIORITY =  priority;
 	res -> lr_usr = (int)entry;
 
 	res -> lr_svc = (int)entry;
@@ -35,29 +37,71 @@ void create_process(func_t* entry)
 
 	if(current_process == &kmain_process)
 	 current_process = kmain_process.next_process;
+
+}
+
+
+void create_process(func_t* entry)
+{
+	create_priority_process(entry, 0);
+}
+
+void elect(){
+	if (USE_PRIORITIES) elect_priority();
+	else  elect_round_robin();
+}
+
+static void del_terminated_process (pcb_s* previous_process) { // supprime le process qui suit previous_process
+
+	pcb_s* tmp =  previous_process->next_process;
+	previous_process->next_process = tmp->next_process;
+
+	if(previous_process == previous_process->next_process)
+	  kmain_process .next_process = NULL;
+
+	kFree((void*)tmp->sp,((unsigned int)10000));
+	kFree((void*)tmp,((unsigned int)sizeof(pcb_s)));
+
+}
+
+void elect_priority() {
+
+	for (pcb_s *proc = current_process->next_process; proc != current_process; proc = proc->next_process){
+		if(proc->next_process->TERMINATED){
+			del_terminated_process(proc);
+		}
+	}
+
+	pcb_s *process_prioritaire = current_process->next_process;
+
+	for (pcb_s *proc = current_process->next_process; proc != current_process; proc = proc->next_process){
+		if (proc->PRIORITY > process_prioritaire->PRIORITY) 
+			process_prioritaire = proc;
+	}
+
+	if( process_prioritaire == NULL )
+		terminate_kernel();
+	else
+		current_process = process_prioritaire; // On donne la main au processus qui a la plus grande priorité
+
+
 }
 
 
 
-void elect(){
+void elect_round_robin(){
 	
-  
-  if(current_process->next_process->TERMINATED)
-	{
-		pcb_s* tmp =  current_process->next_process;
-		current_process->next_process = tmp->next_process;
-
-		if(current_process == current_process->next_process)
-		  kmain_process .next_process = NULL;
-
-		kFree((void*)tmp->sp,((unsigned int)10000));
-		kFree((void*)tmp,((unsigned int)sizeof(pcb_s)));
+  	if(current_process->next_process->TERMINATED){ // On enlève le processus de la liste chainée lorsqu'il est terminé
+	
+		del_terminated_process(current_process);
+		elect_round_robin();
+	} else{
+	
+		if( current_process->next_process == NULL )
+			terminate_kernel();
+		else
+			current_process = current_process->next_process; // On donne la main au processus suivant
 	}
-	
-  if( current_process->next_process == NULL )
-    terminate_kernel();
-  else
-    current_process = current_process->next_process;
 	
 }
 
