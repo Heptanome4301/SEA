@@ -1,0 +1,2152 @@
+#ifndef ASM_TOOLS_H
+#define ASM_TOOLS_H
+
+#include <stdint.h>
+
+/*
+ * Exceptions management
+ */
+#define ENABLE_IRQ()     __asm volatile("cpsie i");
+#define DISABLE_IRQ()     __asm volatile("cpsid i");
+
+#define ENABLE_AB()    __asm volatile("cpsie a");
+#define DISABLE_AB()    __asm volatile("cpsid a");				
+
+#define LOAD_KERNEL_PAGE_TABLE()					\
+    __asm volatile("push {r0}");					\
+    __asm volatile("mov	r0, %0" : : "r"(kmain_process.page_table));	\
+    __asm volatile("mcr 	p15, 0, r0, c2, c0, 0");		\
+    __asm volatile("pop {r0}");
+
+
+#define LOAD_CURRENT_PAGE_TABLE()					\
+    __asm volatile("mov	  r0, %0" : : "r"(current_process->page_table)); \
+    __asm volatile("mcr   p15, 0, r0, c2, c0, 0");
+
+#define INVALIDATE_TLB()				\
+    __asm volatile("mcr   p15, 0, sp, c8, c7, 0");
+
+/*
+ * Functions
+ */
+void Set32(uint32_t add, int val);
+int Get32(uint32_t add);
+void delay(unsigned int c);
+void memory_barrier();
+void invalidate_cache();
+void invalidate_tlb_asm();
+
+#endif
+;@ Configurer une variable
+;@ void Set32(unsigned int add, int val)
+.globl Set32
+Set32:
+	str r1, [r0]
+	mov pc, lr
+;@
+;@ Obtenir la valeur d'un registre
+;@ int Get32(unsigned int add)
+.globl Get32
+Get32:
+	ldr r0, [r0]
+	mov pc, lr
+
+
+;@ Attent n cycles (environ)
+;@ Prototype C : void delay(unsigned int c)
+.globl delay
+delay:
+	lsl r0, r0, #2
+	add r0, r0, #1
+	delay_loop:
+		subs r0, r0, #1
+		bne delay_loop
+	mov pc, lr
+
+.globl memory_barrier
+memory_barrier:
+   mcr   p15, 0, ip, c7, c5, 0      @ invalidate I cache
+   mcr   p15, 0, ip, c7, c5, 6      @ invalidate BTB
+   mcr   p15, 0, ip, c7, c10, 4     @ drain write buffer
+   mcr   p15, 0, ip, c7, c5, 4      @ prefetch flush
+   svc   0xF00000
+   mov   pc, lr
+
+.globl invalidate_cache
+invalidate_cache:
+   mcr	 p15, 0, r0, c1, c0, 0
+   mcr   p15, 0, r0, c7, c7, 0
+   mov   pc, lr
+
+#ifndef _CONFIG_H
+#define _CONFIG_H
+
+#define NULL 0
+
+#define SERIAL_PRINT 1
+#define RPI 0
+#define DEBUG 1
+#define VMEM 0
+
+#endif
+#ifndef FREE_PAGES_H
+#define FREE_PAGES_H
+
+/*******************************************/
+/************* Structs definition **********/
+/*******************************************/
+typedef struct free_pages_descriptor_s {
+  uint32_t length;
+  uint8_t* thePageAddress;
+  struct free_pages_descriptor_s* next;
+} free_pages_descriptor_t;
+
+
+#endif
+#ifndef __HEADER_GPIO
+#define __HEADER_GPIO
+
+
+//
+// Registres du GPIO (seulement ceux qui nous intéressent)
+#define GPIO_FSEL1		0x20200004u
+#define GPIO_SET0		0x2020001Cu
+#define GPIO_CLR0		0x20200028u
+#define GPIO_PUD		0x20200094u
+#define GPIO_PUDCLK0	0x20200098u
+
+
+#endif
+#include <stdint.h>
+
+#include "hw.h"
+#include "asm_tools.h"
+
+/***************************
+ ******** Utilities ********
+ ***************************/
+uint64_t
+divide(uint64_t x, uint64_t y) {
+    int quotient = 0;
+    while (x >= y) {
+        x  -=  y;
+        quotient++;
+    }
+    return quotient;
+}
+
+/* ***************************
+ * ********** Timer **********
+ * ***************************/
+uint64_t
+get_date_ms()
+{
+#if RPI
+    uint32_t date_lowbits = Get32(CLO);
+    uint64_t date_highbits = (uint64_t) Get32(CHI);
+    uint64_t date = divide(((date_highbits << 32) | date_lowbits), SYS_TIMER_CLOCK_div_1000);
+#else
+    uint64_t date = ((uint64_t) 0x43 << 32) | 0x42;
+#endif
+
+    return date;
+}
+
+void
+set_date_ms(uint64_t date_ms)
+{
+  uint64_t date = date_ms * SYS_TIMER_CLOCK_div_1000;
+  uint32_t date_lowbits = date & (0x0000FFFF);
+  uint32_t date_highbits = date >> 32;
+  Set32(CLO, date_lowbits);
+  Set32(CHI, date_highbits);
+}
+
+void
+set_next_tick(uint32_t time_ms)
+{
+    uint32_t date_lowbits = Get32(CLO);
+    date_lowbits += (uint32_t) (time_ms * SYS_TIMER_CLOCK_div_1000) ;
+    Set32(C1, date_lowbits);
+}
+
+void
+set_next_tick_default()
+{
+    uint32_t date_lowbits = Get32(CLO);
+    date_lowbits += DEFAULT_TIMER_INTERVAL;
+    Set32(C1, date_lowbits);
+}
+
+/* Use *system timer* peripheral -> compare module CM1 */
+void
+timer_init()
+{
+    /* 10 ms seems good */
+    set_next_tick_default();
+
+    /* Enable timer irq */
+    ENABLE_TIMER_IRQ();
+
+    /* Enable interrupt *line* */
+    Set32(0x2000B210, 0x00000002);
+}
+
+/* **************************
+ * ********** LEDs **********
+ * **************************/
+static unsigned int led_state = 0U;
+
+void
+led_on(void)
+{
+    unsigned int *gpclr0_ptr = ((unsigned int*)GPCLR0);
+    *gpclr0_ptr = *gpclr0_ptr | 0x10000U;
+    led_state = 1;
+}
+
+void
+led_off(void)
+{
+    unsigned int *gpclr0_ptr = ((unsigned int*)GPSET0);
+    *gpclr0_ptr = *gpclr0_ptr | 0x10000U;
+    led_state = 0;
+}
+
+void
+led_switch(void)
+{
+    if ((led_state & 1U) == 0U)
+    {
+        led_off();
+    }
+    else
+    {
+        led_on();
+    }
+}
+
+unsigned int
+led_status(void)
+{
+    return led_state;
+}
+
+void
+led_init(void)
+{
+    unsigned int *gpfsel1_ptr = ((unsigned int*)GPFSEL1);
+    *gpfsel1_ptr = *gpfsel1_ptr | 0x40000U;
+    led_off();
+}
+
+void
+led_blink(void)
+{
+    int i =0;
+    int waiting = 0;
+    for (i = 0; i < 10; i++) {
+        led_on();
+        for (waiting = 0; waiting < 1000; waiting++);
+        led_off();
+        for (waiting = 0; waiting < 1000; waiting++);                
+    }
+}
+
+/* ***********************************
+ * ********** init_hw() **************
+ * ***********************************/
+void
+hw_init()
+{
+    /* Init uart */
+    uart_init();
+
+    /* Init LED */
+    led_init();
+}
+
+void
+terminate_kernel()
+{
+    log_str("Exit kernel\n");
+}
+#ifndef HW_H
+#define HW_H
+
+#include "config.h"
+
+#if SERIAL_PRINT
+#include "uart.h"
+#endif
+
+#include <stdint.h>
+
+/****************** Printing  ***********/
+#if SERIAL_PRINT
+#define log_str(msg) uart_send_str(">>>> "); uart_send_str(msg);
+#define log_int(msg) uart_send_int(msg);
+#define log_cr() uart_send_str("\n");
+#else
+#define log_str(msg)
+#define log_int(msg)
+#define log_cr()
+#endif
+
+/*************  Memory mapping ***********/
+#define HEAP_START 0x50000
+#define BCM2708_PERI_BASE 0x20000000
+#define GPIO_BASE         (BCM2708_PERI_BASE + 0x200000) /* GPIO controller */
+#define PWM_BASE          (BCM2708_PERI_BASE + 0x20C000) /* PWM controller */
+#define CLOCK_BASE        (BCM2708_PERI_BASE + 0x101000) /* Address */
+
+/*********** Processor modes *************/
+#define IRQ_MODE 0x12
+#define SVC_MODE 0x13
+#define SYS_MODE 0x1F
+
+/************** Clock module *************/
+#define CS      0x20003000
+#define CLO     0x20003004
+#define CHI     0x20003008
+#define C0      0x2000300C
+#define C1      0x20003010
+#define C2      0x20003014
+#define C3      0x20003018
+
+#define SYS_TIMER_CLOCK 250000000 /* We use the system timer, running at 250MHz */
+#define SYS_TIMER_CLOCK_div_1000 250000
+#define DEFAULT_TIMER_INTERVAL 2500000 /* 10 ms */
+
+#define ENABLE_TIMER_IRQ() Set32(CS,2)
+#define DISABLE_TIMER_IRQ() Set32(CS,~2);
+
+
+/******************* GPIO ***************/
+#define SET_GPIO_ALT(g,a) *(gpio+(((g)/10))) |= (((a)<=3?(a)+4:(a)==4?3:2)<<(((g)%10)*3))
+#define GPFSEL1 0x20200004
+#define GPSET0  0x2020001C
+#define GPCLR0  0x20200028
+
+/****************** PWM *****************/
+#define BCM2835_PWM_CONTROL 0
+#define BCM2835_PWM_STATUS  1
+#define BCM2835_PWM0_RANGE  4
+#define BCM2835_PWM0_DATA   5
+#define BCM2835_PWM_FIFO    6
+#define BCM2835_PWM1_RANGE  8
+#define BCM2835_PWM1_DATA   9
+
+#define BCM2835_PWMCLK_CNTL   40
+#define BCM2835_PWMCLK_DIV    41
+
+#define BCM2835_PWM1_MS_MODE    0x8000  /*  Run in MS mode                   */
+#define BCM2835_PWM1_USEFIFO    0x2000  /*  Data from FIFO                   */
+#define BCM2835_PWM1_REVPOLAR   0x1000  /* Reverse polarity                  */
+#define BCM2835_PWM1_OFFSTATE   0x0800  /* Ouput Off state                   */
+#define BCM2835_PWM1_REPEATFF   0x0400  /* Repeat last value if FIFO empty   */
+#define BCM2835_PWM1_SERIAL     0x0200  /* Run in serial mode                */
+#define BCM2835_PWM1_ENABLE     0x0100  /* Channel Enable                    */
+
+#define BCM2835_PWM0_MS_MODE    0x0080  /* Run in MS mode                    */
+#define BCM2835_PWM0_USEFIFO    0x0020  /* Data from FIFO                    */
+#define BCM2835_PWM0_REVPOLAR   0x0010  /* Reverse polarity                  */
+#define BCM2835_PWM0_OFFSTATE   0x0008  /* Ouput Off state                   */
+#define BCM2835_PWM0_REPEATFF   0x0004  /* Repeat last value if FIFO empty   */
+#define BCM2835_PWM0_SERIAL     0x0002  /* Run in serial mode                */
+#define BCM2835_PWM0_ENABLE     0x0001  /* Channel Enable                    */
+
+/*************** FIFO ERROR CODES **************/
+#define BCM2835_BERR  0x100
+#define BCM2835_GAPO4 0x80
+#define BCM2835_GAPO3 0x40
+#define BCM2835_GAPO2 0x20
+#define BCM2835_GAPO1 0x10
+#define BCM2835_RERR1 0x8
+#define BCM2835_WERR1 0x4
+#define BCM2835_EMPT1 0x2
+#define BCM2835_FULL1 0x1
+#define ERRORMASK (BCM2835_GAPO2 | BCM2835_GAPO1 | BCM2835_RERR1 | BCM2835_WERR1)
+
+#define PM_PASSWORD 0x5A000000
+
+/**************** Watchdog ***********************/
+#define PM_RSTC 0x2010001c
+#define PM_WDOG 0x20100024
+#define PM_RSTC_WRCFG_FULL_RESET 0x00000020
+
+/*************** Functions declaration *****************/
+uint64_t get_date_ms();
+void set_date_ms(uint64_t date_ms);
+void set_next_tick(uint32_t time_ms);
+void set_next_tick_default();
+
+void enable_timer_irq();
+void disable_timer_irq();
+void timer_init();
+
+void led_on(void);
+void led_off(void);
+void led_switch(void);
+void led_blink(void);
+
+void hw_init();
+void terminate_kernel();
+
+#endif
+;; @ Build the interrupt vector table here at address 0x8000
+;; @ (because we are using Linux boot mechanism)
+.globl _start
+_start:
+    ldr pc,reset_vector
+    ldr pc,undefined_vector
+    ldr pc,swi_vector
+    ldr pc,prefetch_vector
+    ldr pc,data_vector
+    ldr pc,unused_vector
+    ldr pc,irq_vector
+    ldr pc,fiq_vector
+reset_vector:      .word reset_asm_handler
+undefined_vector:  .word undefined_asm_handler
+swi_vector:        .word swi_handler
+prefetch_vector:   .word prefetch_asm_handler
+data_vector:       .word data_asm_handler
+unused_vector:     .word unused_asm_handler
+irq_vector:        .word irq_asm_handler
+fiq_vector:        .word fiq_asm_handler
+
+	
+reset_asm_handler:
+
+;;@ Copy IVT at address 0 as it should be
+    mov r0,#0x8000
+    mov r1,#0x0000
+    ldmia r0!,{r2,r3,r4,r5,r6,r7,r8,r9}
+    stmia r1!,{r2,r3,r4,r5,r6,r7,r8,r9}
+    ldmia r0!,{r2,r3,r4,r5,r6,r7,r8,r9}
+    stmia r1!,{r2,r3,r4,r5,r6,r7,r8,r9}
+	
+    ;@ FIQ 
+    ;@ (PSR_FIQ_MODE|PSR_FIQ_DIS|PSR_IRQ_DIS)
+    mov r0,#0xD1
+    msr cpsr_c,r0
+    ldr sp, =__irq_stack_end__
+
+    ;@ IRQ 
+    ;@ (PSR_IRQ_MODE|PSR_FIQ_DIS|PSR_IRQ_DIS)
+    mov r0,#0xD2
+    msr cpsr_c,r0
+    ldr sp, =__irq_stack_end__
+
+   ;@ (PSR_ABORT_MODE|PSR_FIQ_DIS|PSR_IRQ_DIS)
+    mov r0,#0xD7
+    msr cpsr_c,r0
+    ldr sp, =__irq_stack_end__
+
+    ;@ (PSR_SVC_MODE|PSR_FIQ_DIS|PSR_IRQ_DIS)
+    mov r0,#0xD3
+    msr cpsr_c,r0
+    ldr sp, =__svc_stack_end__
+
+    ;@ (PSR_SYSTEM_MODE|PSR_FIQ_DIS|PSR_IRQ_DIS)
+    mov r0,#0xDF
+    msr cpsr_c,r0
+    ldr sp, =__sys_stack_end__
+
+    bl kmain
+
+after_kmain:
+    b after_kmain
+
+;;@ Trampolines to Interrupt Service Routines
+        
+undefined_asm_handler:
+	b undefined_asm_handler
+
+swi_asm_handler:
+	b swi_asm_handler
+	
+prefetch_asm_handler:
+	b irq_asm_handler
+
+irq_asm_handler:
+	b irq_asm_handler
+
+unused_asm_handler:
+	b unused_asm_handler
+
+fiq_asm_handler:
+	b fiq_asm_handler
+
+data_asm_handler:
+	b data_asm_handler
+
+#include <stdint.h>
+#include "kheap.h"
+
+
+struct fl {
+	struct fl	*next;
+	unsigned int	size;
+} *freelist = (struct fl *) 0;
+
+uint8_t* kernel_heap_top;
+uint8_t* kernel_heap_limit;
+
+unsigned int
+aligned_value(unsigned int addr, unsigned int pwr_of_2)
+{    
+    unsigned int modulo = (1 << pwr_of_2);
+    unsigned int max_value_modulo = modulo - 1;
+    return (addr + max_value_modulo) & ~max_value_modulo;
+}
+
+uint8_t*
+kAlloc_aligned(unsigned int size, unsigned int pwr_of_2)
+{
+	register struct fl *cfl = freelist, **prev;
+	unsigned int aligned_cfl = aligned_value((unsigned int) cfl, pwr_of_2);
+	unsigned int size_aligned = aligned_value(size, 2);
+
+	prev = &freelist;
+	while (cfl && (aligned_cfl != (unsigned int) cfl || cfl->size != size_aligned))
+	{
+	    prev = &(cfl->next);
+	    cfl = cfl->next;
+	    aligned_cfl = aligned_value((unsigned int) cfl, pwr_of_2);
+	}
+
+	if (! cfl)
+	{
+	    cfl = (struct fl *) kernel_heap_top;
+	    aligned_cfl = aligned_value((unsigned int) cfl, pwr_of_2);
+
+	    if (aligned_cfl == (unsigned int) cfl)
+	    {
+		kernel_heap_top += size_aligned;
+	    }
+	    else
+	    {
+		kFree((uint8_t*) cfl, (aligned_cfl - (unsigned int) cfl));
+		kernel_heap_top = (uint8_t*) (aligned_cfl + size_aligned);
+	    }
+
+	    /* No space available anymore */
+	    if (kernel_heap_top > kernel_heap_limit)
+		return FORBIDDEN_ADDRESS;
+	}
+	else
+	{
+	    if (aligned_cfl == (unsigned int) cfl)
+	    {
+		*prev = cfl->next;
+	    }
+	    else
+	    {
+		kFree((uint8_t*) cfl, cfl->size - size_aligned);
+	    }
+	}
+
+	/* Fill with FORBIDDEN_BYTE to debug (more) easily */
+	for (int i = 0 ; i < size_aligned ; i++) {
+	    *(((uint8_t*) aligned_cfl) + i) = FORBIDDEN_BYTE;
+	}
+	
+	return ((uint8_t *) aligned_cfl);
+}
+
+uint8_t*
+kAlloc(unsigned int size)
+{
+	register struct fl *cfl = freelist, **prev;
+	unsigned int size_aligned = (size + 3) & ~3;
+
+	prev = &freelist;
+
+	while (cfl && cfl->size != size_aligned)
+	{
+	    prev = &cfl->next;
+	    cfl = cfl->next;
+	}
+
+	if (! cfl)
+	{
+	    cfl = (struct fl *) kernel_heap_top;
+	    kernel_heap_top += size_aligned;
+
+	    /* No space available anymore */
+	    if (kernel_heap_top > kernel_heap_limit)
+		return FORBIDDEN_ADDRESS;
+	}
+	else
+	{
+	    *prev = cfl->next;
+	}
+
+	/* Fill with FORBIDDEN_BYTE to debug (more) easily */
+	for (int i = 0 ; i < size_aligned ; i++) {
+	    *((uint8_t*) cfl) = FORBIDDEN_BYTE;
+	}
+
+	return ((uint8_t *) cfl);
+}
+
+void
+kFree(uint8_t* ptr, unsigned int size)
+{
+	register struct fl* cfl = (struct fl*) ptr;
+
+	cfl->size = (size + 3) & ~3;
+	cfl->next = freelist;
+	freelist = cfl;
+}
+
+void
+kheap_init()
+{
+    kernel_heap_top = (uint8_t*) &__kernel_heap_start__;
+    kernel_heap_limit = (uint8_t*) &__kernel_heap_end__;
+}
+#ifndef PHYALLOC_H
+#define PHYALLOC_H
+
+#include <stdint.h>
+
+extern uint8_t* kernel_heap_top;
+extern uint8_t* kernel_heap_limit;
+
+extern uint32_t __kernel_heap_start__;
+extern uint32_t __kernel_heap_end__;
+extern uint32_t __after_kernel_heap__;
+extern uint32_t __devices_start__;
+extern uint32_t __devices_end__;
+extern uint32_t __stacks_end__;
+extern uint32_t __bss_end__;
+
+unsigned int aligned_value(unsigned int addr, unsigned int pwr_of_2);
+uint8_t* kAlloc_aligned(unsigned int size, unsigned int pwr_of_2);
+uint8_t* kAlloc(unsigned int size);
+void kFree(uint8_t* ptr, unsigned int size);
+void kheap_init();
+
+#define FORBIDDEN_BYTE ((uint8_t) 0x00)
+#define FORBIDDEN_ADDRESS (void*) 0xFFFFFFF0
+
+#endif
+#include "pwm.h"
+#include "hw.h"
+
+extern char _binary_tune_wav_start;
+
+static volatile unsigned* gpio = (void*)GPIO_BASE;
+static volatile unsigned* clk = (void*)CLOCK_BASE;
+static volatile unsigned* pwm = (void*)PWM_BASE;
+
+/* Decomment this in order to get sound */
+/* char* audio_data = &_binary_tune_wav_start; */
+
+static void pause(int t) {
+    // Pause for about t ms
+    int i;
+    for (;t>0;t--) {
+	for (i=5000;i>0;i--) 
+	    i++; i--;
+    }
+}
+
+
+static void audio_init(void)
+{
+    /* Values read from raspbian: */
+    /* PWMCLK_CNTL = 148 = 10010100
+       PWMCLK_DIV = 16384
+       PWM_CONTROL=9509 = 10010100100101
+       PWM0_RANGE=1024
+       PWM1_RANGE=1024 */
+
+    unsigned int range = 0x400;
+    unsigned int idiv = 2;
+    /* unsigned int pwmFrequency = (19200000 / idiv) / range; */
+
+    SET_GPIO_ALT(40, 0);
+    SET_GPIO_ALT(45, 0);
+    pause(2);
+
+    *(clk + BCM2835_PWMCLK_CNTL) = PM_PASSWORD | (1 << 5);    // stop clock
+    *(clk + BCM2835_PWMCLK_DIV)  = PM_PASSWORD | (idiv<<12);  // set divisor
+    *(clk + BCM2835_PWMCLK_CNTL) = PM_PASSWORD | 16 | 1;      // enable + oscillator (raspbian has this as plla)
+
+    pause(2); 
+
+    // disable PWM
+    *(pwm + BCM2835_PWM_CONTROL) = 0;
+       
+    pause(2);
+
+    *(pwm+BCM2835_PWM0_RANGE) = range;
+    *(pwm+BCM2835_PWM1_RANGE) = range;
+
+    *(pwm+BCM2835_PWM_CONTROL) =
+	BCM2835_PWM1_USEFIFO | // Use FIFO and not PWM mode
+	//          BCM2835_PWM1_REPEATFF |
+	BCM2835_PWM1_ENABLE  | // enable channel 1
+	BCM2835_PWM0_USEFIFO | // use FIFO and not PWM mode
+	//          BCM2835_PWM0_REPEATFF |  */
+	1<<6                 | // clear FIFO
+	BCM2835_PWM0_ENABLE;   // enable channel 0
+
+    pause(2);
+}
+
+void
+audio_test()
+{
+    int i=0;
+    long status;
+    audio_init();
+
+    while (i < 100000)
+    {
+	status =  *(pwm + BCM2835_PWM_STATUS);
+	if (!(status & BCM2835_FULL1))
+	{
+	    /* Decomment this in order to get sound */
+	    /* *(pwm+BCM2835_PWM_FIFO) = audio_data[i]; */
+	    i++;
+	}
+      
+	if ((status & ERRORMASK)) {
+	    //                uart_print("error: ");
+	    //                hexstring(status);
+	    //                uart_print("\r\n");
+	    *(pwm+BCM2835_PWM_STATUS) = ERRORMASK;
+	}
+    }
+}
+#ifndef PWM_H
+#define PWM_H
+
+void audio_test();
+
+#endif
+#include "kheap.h"
+#include "sched.h"
+
+
+pcb_s kmain_process;
+
+
+
+void sched_init()
+{
+
+	current_process = &kmain_process;
+	kheap_init();
+
+}
+
+
+pcb_s* create_process(func_t* entry)
+{
+	pcb_s* res = (pcb_s*)kAlloc(sizeof(pcb_s));
+	res -> lr_usr = (int)entry;
+	
+	int*sp = (int*)kAlloc(10000); // 10Ko
+	res -> sp = (int*)(((int)sp) +( 10000/4 )) ;
+
+	return res;
+
+}
+
+void sys_yieldto(pcb_s* dest)
+{
+
+	//int tmp;
+
+	__asm("mov r0, %0" : :"r"(YIELDTO) : "r0");    // ecriture registre
+	__asm("mov r1, %0" : :"r"(dest) : "r1");    // ecriture registre
+	//__asm("mov %0, lr" : "=r"(tmp) );           // lecture registre
+	//__asm("mov r2, %0" : :"r"(tmp) : "r2");    // ecriture registre
+	__asm("SWI #0");
+
+}
+
+
+
+void do_sys_yieldto()
+{
+	int i;
+	int * p_pile_context = (int*)(pile_context);
+	int * p_curr_procss = (int*)current_process;
+
+
+	// Sauvegarde process current
+	for(i=0;i<14;i++)
+	{
+		*(p_curr_procss+i) = *(p_pile_context+i);
+	}
+
+	__asm("cps 0b11111");					// passage au mode systeme
+	__asm("mov %0, lr" : "=r"(current_process->lr_usr) );   // lecture registre
+	__asm("mov %0, sp" : "=r"(current_process->sp) );   	// lecture registre
+	__asm("cps 0b10011"); 					// passage au mode svc
+
+	
+	__asm("mrs r3,SPSR");
+	__asm("mov %0, r3" : "=r"(current_process-> CPSR_user) );   // lecture registre
+	
+
+	// echange de context
+	current_process = (pcb_s *)(*(p_pile_context +1)) ;    //dest
+
+	for(i=0;i<14;i++)
+	{
+		*(p_pile_context+i) = *(p_curr_procss+i);
+	}
+
+	__asm("cps 0b11111");					// passage au mode systeme
+	__asm("mov lr, %0" : :"r"(current_process->lr_usr));    // ecriture registre
+	__asm("mov sp, %0" : :"r"(current_process->sp));    	// ecriture registre	
+	__asm("cps 0b10011"); 					// passage au mode svc
+	
+	__asm("mov r3, %0" : :"r"(current_process->CPSR_user) : "r3" );    	// ecriture registre
+	__asm("msr SPSR_s,r3"); // normalent SPSR  mais ca marche pas avec ... 
+	
+	
+	
+}
+
+/* Cette partie n'est pas encore à l'ordre du jour
+
+void do_sys_set_scheduler() 
+{
+
+}
+
+void sys_set_scheduler()
+{
+
+
+}
+*/
+#include "kheap.h"
+#include "sched.h"
+
+
+pcb_s kmain_process;
+
+
+
+void sched_init()
+{
+
+	current_process = &kmain_process;
+	kheap_init();
+
+}
+
+
+pcb_s* create_process(func_t* entry)
+{
+	pcb_s* res = (pcb_s*)kAlloc(sizeof(pcb_s));
+	res -> lr_usr = (int)entry;
+	
+	int*sp = (int*)kAlloc(10000); // 10Ko
+	res -> sp = (int*)(((int)sp) +( 10000/4 )) ;
+
+	return res;
+
+}
+
+void sys_yieldto(pcb_s* dest)
+{
+
+	//int tmp;
+
+	__asm("mov r0, %0" : :"r"(YIELDTO) : "r0");    // ecriture registre
+	__asm("mov r1, %0" : :"r"(dest) : "r1");    // ecriture registre
+	//__asm("mov %0, lr" : "=r"(tmp) );           // lecture registre
+	//__asm("mov r2, %0" : :"r"(tmp) : "r2");    // ecriture registre
+	__asm("SWI #0");
+
+}
+
+
+
+void do_sys_yieldto()
+{
+	int i;
+	int * p_pile_context = (int*)(pile_context);
+	int * p_curr_procss = (int*)current_process;
+
+
+	// Sauvegarde process current
+	for(i=0;i<14;i++)
+	{
+		*(p_curr_procss+i) = *(p_pile_context+i);
+	}
+
+	__asm("cps 0b11111");					// passage au mode systeme
+	__asm("mov %0, lr" : "=r"(current_process->lr_usr) );   // lecture registre
+	__asm("mov %0, sp" : "=r"(current_process->sp) );   	// lecture registre
+	__asm("cps 0b10011"); 					// passage au mode svc
+
+	
+	__asm("mrs r3,SPSR");
+	__asm("mov %0, r3" : "=r"(current_process-> CPSR_user) );   // lecture registre
+	
+
+	// echange de context
+	current_process = (pcb_s *)(*(p_pile_context +1)) ;    //dest
+
+	for(i=0;i<14;i++)
+	{
+		*(p_pile_context+i) = *(p_curr_procss+i);
+	}
+
+	__asm("cps 0b11111");					// passage au mode systeme
+	__asm("mov lr, %0" : :"r"(current_process->lr_usr));    // ecriture registre
+	__asm("mov sp, %0" : :"r"(current_process->sp));    	// ecriture registre	
+	__asm("cps 0b10011"); 					// passage au mode svc
+	
+	__asm("mov r3, %0" : :"r"(current_process->CPSR_user) : "r3" );    	// ecriture registre
+	__asm("msr SPSR_s,r3"); // normalent SPSR  mais ca marche pas avec ... 
+	
+	
+	
+}
+
+/* Cette partie n'est pas encore à l'ordre du jour
+void do_sys_set_scheduler() 
+{
+
+}
+
+void sys_set_scheduler()
+{
+
+
+}
+*/
+#include "syscall.h"
+
+#ifndef SCHED_H
+#define SCHED_H
+
+#define YIELDTO 5
+#define SYS_SET_SCHEDULER 6
+
+typedef  int(func_t) (void);
+pcb_s* current_process;
+
+
+void sched_init();
+pcb_s* create_process(func_t* entry);
+
+void sys_yieldto(pcb_s* dest);
+void do_sys_yieldto();
+
+/* Cette partie n'est pas encore à l'ordre du jour
+void sys_set_scheduler();
+void do_sys_set_scheduler();
+*/
+
+
+#endif
+#include "syscall.h"
+
+#ifndef SCHED_H
+#define SCHED_H
+
+#define YIELDTO 5
+#define SYS_SET_SCHEDULER 6
+
+typedef  int(func_t) (void);
+pcb_s* current_process;
+
+
+void sched_init();
+pcb_s* create_process(func_t* entry);
+
+void sys_yieldto(pcb_s* dest);
+void do_sys_yieldto();
+
+void sys_set_scheduler();
+void do_sys_set_scheduler();
+
+
+#endif
+#include "syscall.h"
+#include "util.h"
+#include "asm_tools.h"
+#include <stdint.h>
+#include "hw.h"
+#include "sched.h"
+
+#define WORD_SIZE 4
+
+#define REBOOT_INT 1
+#define NOP_INT 2
+#define SYS_TIME 3
+#define SYS_TIME_GT 4
+
+
+
+
+
+void sys_reboot()
+{
+	__asm("mov r0, %0" : :"r"(REBOOT_INT) : "r0");    // ecriture registre
+	__asm("SWI #0");
+	//__asm("bl swi_handler");
+
+
+}
+
+
+void __attribute__((naked)) swi_handler(void)
+{
+	//sauvegarde du context
+	__asm("stmfd sp!, {r0-r12,lr}");
+	__asm("mov %0, sp" : "=r"(pile_context) );  // lecture registre
+
+	int num_intp;
+	__asm("mov %0, r0" : "=r"(num_intp ) : : "r0");  // lecture registre
+
+
+	switch(num_intp)
+	{
+		case REBOOT_INT :
+			do_sys_reboot();			
+			break;
+
+		case NOP_INT :
+			do_sys_nop();
+			break;
+
+		case SYS_TIME :
+			
+			do_sys_settime();
+			break;
+		
+		case SYS_TIME_GT :
+			do_sys_gettime();
+			break;
+
+		case YIELDTO :
+			do_sys_yieldto();
+			break;
+		/*
+		case SYS_SET_SCHEDULER :
+			do_sys_set_scheduler();
+			break;
+
+*/
+		default :
+			PANIC();
+		break;
+	}
+
+	//restaurer context
+	__asm("ldmfd sp!, {r0-r12,pc}^");
+
+}
+
+
+void do_sys_reboot()
+{
+	__asm("mov pc, %0" : :"r"(0) ); 
+
+	/*const int PM_RSTC = 0x2010001c;
+	const int PM_WDOG = 0x20100024;
+	const int PM_PASSWORD = 0x5a000000;
+	const int PM_RSTC_WRCFG_FULL_RESET = 0x00000020;
+
+	Set32(PM_WDOG, PM_PASSWORD | 1);
+	Set32(PM_RSTC, PM_PASSWORD | PM_RSTC_WRCFG_FULL_RESET);
+	while(1);*/
+
+	
+}
+
+
+void sys_nop()
+{
+
+	__asm("mov r0, %0" : :"r"(NOP_INT) : "r0");    // ecriture registre
+	__asm("SWI #0");
+
+	
+
+}
+void do_sys_nop()
+{
+
+	//__asm("msr SPSR_svc CPSR");	
+	//__asm("b LR_svc");
+	
+}
+
+
+void sys_settime(uint64_t date_ms)
+{
+	
+	__asm("mov r0, %0" : :"r"(SYS_TIME) : "r0");    // ecriture registre
+	__asm("mov r1, %0" : :"r"(date_ms) : "r1");    // ecriture registre
+	__asm("mov r2, %0" : :"r"(date_ms >> 32) : "r2");    // ecriture registre
+	__asm("SWI #0");
+
+}
+
+
+void do_sys_settime()
+{
+	uint64_t date_ms;
+	uint64_t a;
+	uint64_t b;
+
+	a = *(int *)(pile_context+sizeof(int));
+	b = *(int *)(pile_context+2*sizeof(int));
+	date_ms = (a & 0x00000000ffffffff) | (b << 32) ;
+	//date_ms = date_ms+1;
+
+	set_date_ms(date_ms);
+
+}
+
+
+uint64_t sys_gettime()
+{
+	
+	__asm("mov r0, %0" : :"r"(SYS_TIME_GT) : "r0");    // ecriture registre
+	__asm("SWI #0");
+
+	uint64_t date_ms;
+	uint64_t fort;
+	uint64_t faible; 
+
+	__asm("mov %0, r0" : "=r"(faible) );  // lecture registre
+	__asm("mov %0, r1" : "=r"(fort) );  // lecture registre
+
+
+	date_ms = (faible & 0x00000000ffffffff) | (fort << 32) ;
+
+	return date_ms;
+
+}
+
+
+void do_sys_gettime()
+{
+	uint64_t date_ms;
+
+	date_ms = get_date_ms();
+
+	*(int *)pile_context = (int)(date_ms & 0x00000000ffffffff) ; // faible
+	*(int *)(pile_context+sizeof(int)) = (int)((date_ms & 0xffffffff00000000) >> 32 ) ; // fort
+
+}
+#include "syscall.h"
+#include "util.h"
+#include "asm_tools.h"
+#include <stdint.h>
+#include "hw.h"
+#include "sched.h"
+
+#define WORD_SIZE 4
+
+#define REBOOT_INT 1
+#define NOP_INT 2
+#define SYS_TIME 3
+#define SYS_TIME_GT 4
+
+
+
+
+
+void sys_reboot()
+{
+	__asm("mov r0, %0" : :"r"(REBOOT_INT) : "r0");    // ecriture registre
+	__asm("SWI #0");
+	//__asm("bl swi_handler");
+
+
+}
+
+
+void __attribute__((naked)) swi_handler(void)
+{
+	//sauvegarde du context
+	__asm("stmfd sp!, {r0-r12,lr}");
+	__asm("mov %0, sp" : "=r"(pile_context) );  // lecture registre
+
+	int num_intp;
+	__asm("mov %0, r0" : "=r"(num_intp ) : : "r0");  // lecture registre
+
+
+	switch(num_intp)
+	{
+		case REBOOT_INT :
+			do_sys_reboot();			
+			break;
+
+		case NOP_INT :
+			do_sys_nop();
+			break;
+
+		case SYS_TIME :
+			
+			do_sys_settime();
+			break;
+		
+		case SYS_TIME_GT :
+			do_sys_gettime();
+			break;
+
+		case YIELDTO :
+			do_sys_yieldto();
+			break;
+
+		case SYS_SET_SCHEDULER :
+			do_sys_set_scheduler();
+			break;
+
+		default :
+			PANIC();
+		break;
+	}
+
+	//restaurer context
+	__asm("ldmfd sp!, {r0-r12,pc}^");
+
+}
+
+
+void do_sys_reboot()
+{
+	__asm("mov pc, %0" : :"r"(0) ); 
+
+	/*const int PM_RSTC = 0x2010001c;
+	const int PM_WDOG = 0x20100024;
+	const int PM_PASSWORD = 0x5a000000;
+	const int PM_RSTC_WRCFG_FULL_RESET = 0x00000020;
+
+	Set32(PM_WDOG, PM_PASSWORD | 1);
+	Set32(PM_RSTC, PM_PASSWORD | PM_RSTC_WRCFG_FULL_RESET);
+	while(1);*/
+
+	
+}
+
+
+void sys_nop()
+{
+
+	__asm("mov r0, %0" : :"r"(NOP_INT) : "r0");    // ecriture registre
+	__asm("SWI #0");
+
+	
+
+}
+void do_sys_nop()
+{
+
+	//__asm("msr SPSR_svc CPSR");	
+	//__asm("b LR_svc");
+	
+}
+
+
+void sys_settime(uint64_t date_ms)
+{
+	
+	__asm("mov r0, %0" : :"r"(SYS_TIME) : "r0");    // ecriture registre
+	__asm("mov r1, %0" : :"r"(date_ms) : "r1");    // ecriture registre
+	__asm("mov r2, %0" : :"r"(date_ms >> 32) : "r2");    // ecriture registre
+	__asm("SWI #0");
+
+}
+
+
+void do_sys_settime()
+{
+	uint64_t date_ms;
+	uint64_t a;
+	uint64_t b;
+
+	a = *(int *)(pile_context+sizeof(int));
+	b = *(int *)(pile_context+2*sizeof(int));
+	date_ms = (a & 0x00000000ffffffff) | (b << 32) ;
+	//date_ms = date_ms+1;
+
+	set_date_ms(date_ms);
+
+}
+
+
+uint64_t sys_gettime()
+{
+	
+	__asm("mov r0, %0" : :"r"(SYS_TIME_GT) : "r0");    // ecriture registre
+	__asm("SWI #0");
+
+	uint64_t date_ms;
+	uint64_t fort;
+	uint64_t faible; 
+
+	__asm("mov %0, r0" : "=r"(faible) );  // lecture registre
+	__asm("mov %0, r1" : "=r"(fort) );  // lecture registre
+
+
+	date_ms = (faible & 0x00000000ffffffff) | (fort << 32) ;
+
+	return date_ms;
+
+}
+
+
+void do_sys_gettime()
+{
+	uint64_t date_ms;
+
+	date_ms = get_date_ms();
+
+	*(int *)pile_context = (int)(date_ms & 0x00000000ffffffff) ; // faible
+	*(int *)(pile_context+sizeof(int)) = (int)((date_ms & 0xffffffff00000000) >> 32 ) ; // fort
+
+}
+
+
+#include "syscall.h"
+#include "util.h"
+#include "asm_tools.h"
+#include <stdint.h>
+#include "hw.h"
+#include "sched.h"
+
+#define WORD_SIZE 4
+
+#define REBOOT_INT 1
+#define NOP_INT 2
+#define SYS_TIME 3
+#define SYS_TIME_GT 4
+#define YIELDTO 5
+
+int stack_pointer;
+
+void sys_reboot()
+{
+	__asm("mov r0, %0" : :"r"(REBOOT_INT) : "r0");    // ecriture registre
+	__asm("SWI #0");
+	//__asm("bl swi_handler");
+
+
+}
+
+
+void __attribute__((naked)) swi_handler(void)
+{
+	//sauvegarde du context
+	__asm("stmfd sp!, {r0-r12,lr}");
+	__asm("mov %0, sp" : "=r"(stack_pointer) );  // lecture registre
+
+	int num_intp;
+	__asm("mov %0, r0" : "=r"(num_intp ) : : "r0");  // lecture registre
+
+
+	switch(num_intp)
+	{
+		case REBOOT_INT :
+			do_sys_reboot();			
+			break;
+
+		case NOP_INT :
+			do_sys_nop();
+			break;
+
+		case SYS_TIME :
+			
+			do_sys_settime();
+			break;
+		
+		case SYS_TIME_GT :
+			do_sys_gettime();
+			break;
+
+		case YIELDTO :
+			do_sys_yieldto();
+			break;
+
+		default :
+			PANIC();
+		break;
+	}
+
+	//restaurer context
+	__asm("ldmfd sp!, {r0-r12,pc}^");
+
+}
+
+
+void do_sys_reboot()
+{
+	__asm("mov pc, %0" : :"r"(0) ); 
+
+	/*const int PM_RSTC = 0x2010001c;
+	const int PM_WDOG = 0x20100024;
+	const int PM_PASSWORD = 0x5a000000;
+	const int PM_RSTC_WRCFG_FULL_RESET = 0x00000020;
+
+	Set32(PM_WDOG, PM_PASSWORD | 1);
+	Set32(PM_RSTC, PM_PASSWORD | PM_RSTC_WRCFG_FULL_RESET);
+	while(1);*/
+
+	
+}
+
+
+void sys_nop()
+{
+
+	__asm("mov r0, %0" : :"r"(NOP_INT) : "r0");    // ecriture registre
+	__asm("SWI #0");
+
+	
+
+}
+void do_sys_nop()
+{
+
+	//__asm("msr SPSR_svc CPSR");	
+	//__asm("b LR_svc");
+	
+}
+
+
+void sys_settime(uint64_t date_ms)
+{
+	
+	__asm("mov r0, %0" : :"r"(SYS_TIME) : "r0");    // ecriture registre
+	__asm("mov r1, %0" : :"r"(date_ms) : "r1");    // ecriture registre
+	__asm("mov r2, %0" : :"r"(date_ms >> 32) : "r2");    // ecriture registre
+	__asm("SWI #0");
+
+}
+
+
+void do_sys_settime()
+{
+	uint64_t date_ms;
+	uint64_t a;
+	uint64_t b;
+
+	a = *(int *)(stack_pointer+sizeof(int));
+	b = *(int *)(stack_pointer+2*sizeof(int));
+	date_ms = (a & 0x00000000ffffffff) | (b << 32) ;
+	//date_ms = date_ms+1;
+
+	set_date_ms(date_ms);
+
+}
+
+
+uint64_t sys_gettime()
+{
+	
+	__asm("mov r0, %0" : :"r"(SYS_TIME_GT) : "r0");    // ecriture registre
+	__asm("SWI #0");
+
+	uint64_t date_ms;
+	uint64_t fort;
+	uint64_t faible; 
+
+	__asm("mov %0, r0" : "=r"(faible) );  // lecture registre
+	__asm("mov %0, r1" : "=r"(fort) );  // lecture registre
+
+
+	date_ms = (faible & 0x00000000ffffffff) | (fort << 32) ;
+
+	return date_ms;
+
+}
+
+
+void do_sys_gettime()
+{
+	uint64_t date_ms;
+
+	date_ms = get_date_ms();
+
+	*(int *)stack_pointer = (int)(date_ms & 0x00000000ffffffff) ; // faible
+	*(int *)(stack_pointer+sizeof(int)) = (int)((date_ms & 0xffffffff00000000) >> 32 ) ; // fort
+
+}
+
+
+
+void sys_yieldto(pcb_s* dest)
+{
+
+	//int tmp;
+
+	__asm("mov r0, %0" : :"r"(YIELDTO) : "r0");    // ecriture registre
+	__asm("mov r1, %0" : :"r"(dest) : "r1");    // ecriture registre
+	//__asm("mov %0, lr" : "=r"(tmp) );           // lecture registre
+	//__asm("mov r2, %0" : :"r"(tmp) : "r2");    // ecriture registre
+	__asm("SWI #0");
+
+}
+
+
+
+void do_sys_yieldto_x()
+{
+	int * p_stack_pointer = (int*)(stack_pointer);
+
+	pcb_s* dest = (pcb_s *)(*(p_stack_pointer +1));
+	//dest = dest;	
+
+	//pile svc  -> global current process
+	current_process->r0 = *(p_stack_pointer); 
+	current_process->r1 = *(int*)(stack_pointer+WORD_SIZE); 
+	current_process->r2 = *(int*)(stack_pointer+WORD_SIZE*2); 
+	current_process->r3 = *(int*)(stack_pointer+WORD_SIZE*3); 
+	current_process->r4 = *(int*)(stack_pointer+WORD_SIZE*4); 
+	current_process->r5 = *(int*)(stack_pointer+WORD_SIZE*5); 
+	current_process->r6 = *(int*)(stack_pointer+WORD_SIZE*6); 
+	current_process->r7 = *(int*)(stack_pointer+WORD_SIZE*7); 
+	current_process->r8 = *(int*)(stack_pointer+WORD_SIZE*8); 
+	current_process->r9 = *(int*)(stack_pointer+WORD_SIZE*9); 
+	current_process->r10 = *(int*)(stack_pointer+WORD_SIZE*10); 
+	current_process->r11 = *(int*)(stack_pointer+WORD_SIZE*11); 
+	current_process->r12 = *(int*)(stack_pointer+WORD_SIZE*12);
+	current_process->lr_svc = *(int*)(stack_pointer+WORD_SIZE*13); 
+
+	//current_process-> lr_usr = (*(p_stack_pointer +2));
+
+	//current_process = dest;
+
+	__asm("cps 0b11111");				// passage au mode systeme
+	__asm("mov %0, lr" : "=r"(current_process->lr_usr) );   // lecture registre
+	__asm("cps 0b10011"); 				// passage au mode svc
+
+	// dest -> pile svc 
+	*(p_stack_pointer)= dest->r0; 
+	*(int*)(stack_pointer+WORD_SIZE) = dest->r1; 
+	*(int*)(stack_pointer+WORD_SIZE*2) = dest->r2 ; 
+	*(int*)(stack_pointer+WORD_SIZE*3) = dest->r3 ; 
+	*(int*)(stack_pointer+WORD_SIZE*4) = dest->r4 ; 
+	*(int*)(stack_pointer+WORD_SIZE*5) = dest->r5 ; 
+	*(int*)(stack_pointer+WORD_SIZE*6) = dest->r6  ; 
+	*(int*)(stack_pointer+WORD_SIZE*7) = dest->r7 ; 
+	*(int*)(stack_pointer+WORD_SIZE*8) = dest->r8 ; 
+	*(int*)(stack_pointer+WORD_SIZE*9) = dest->r9 ; 
+	*(int*)(stack_pointer+WORD_SIZE*10) = dest->r10 ; 
+	*(int*)(stack_pointer+WORD_SIZE*11) = dest->r11 ; 
+	*(p_stack_pointer+12) = dest->r12 ;
+	*(p_stack_pointer+13) = dest->lr_svc;
+	//*(int*)(stack_pointer+WORD_SIZE*13) = dest->lr ; 
+
+	//
+	
+
+}
+
+
+void do_sys_yieldto_xx()
+{
+	int lr;
+	int * p_stack_pointer = (int*)(stack_pointer);
+	pcb_s* dest = (pcb_s *)(*(p_stack_pointer +1));
+
+	__asm("mov %0, lr" : "=r"(lr) );  // lecture registre
+
+
+	//pile svc  -> global current process
+	current_process->r0 = *(p_stack_pointer); 
+	current_process->r1 = *(int*)(stack_pointer+WORD_SIZE); 
+	current_process->r2 = *(int*)(stack_pointer+WORD_SIZE*2); 
+	current_process->r3 = *(int*)(stack_pointer+WORD_SIZE*3); 
+	current_process->r4 = *(int*)(stack_pointer+WORD_SIZE*4); 
+	current_process->r5 = *(int*)(stack_pointer+WORD_SIZE*5); 
+	current_process->r6 = *(int*)(stack_pointer+WORD_SIZE*6); 
+	current_process->r7 = *(int*)(stack_pointer+WORD_SIZE*7); 
+	current_process->r8 = *(int*)(stack_pointer+WORD_SIZE*8); 
+	current_process->r9 = *(int*)(stack_pointer+WORD_SIZE*9); 
+	current_process->r10 = *(int*)(stack_pointer+WORD_SIZE*10); 
+	current_process->r11 = *(int*)(stack_pointer+WORD_SIZE*11); 
+	current_process->r12 = *(int*)(stack_pointer+WORD_SIZE*12);
+	current_process->lr_svc = lr;//*(int*)(stack_pointer+WORD_SIZE*13); 
+
+	__asm("cps 0b11111");				// passage au mode systeme
+	__asm("mov %0, lr" : "=r"(current_process->lr_usr) );   // lecture registre
+	__asm("mov %0, sp" : "=r"(current_process->sp) );   // lecture registre
+	__asm("cps 0b10011"); 				// passage au mode svc
+
+
+	//current_process-> lr_usr = (*(p_stack_pointer +2));
+
+	current_process = dest;
+
+
+	// dest -> pile svc 
+	*(p_stack_pointer)= current_process ->r0; 
+	*(int*)(stack_pointer+WORD_SIZE) = current_process ->r1; 
+	*(int*)(stack_pointer+WORD_SIZE*2) = current_process ->r2 ; 
+	*(int*)(stack_pointer+WORD_SIZE*3) = current_process ->r3 ; 
+	*(int*)(stack_pointer+WORD_SIZE*4) = current_process ->r4 ; 
+	*(int*)(stack_pointer+WORD_SIZE*5) = current_process ->r5 ; 
+	*(int*)(stack_pointer+WORD_SIZE*6) = current_process ->r6 ; 
+	*(int*)(stack_pointer+WORD_SIZE*7) = current_process ->r7 ; 
+	*(int*)(stack_pointer+WORD_SIZE*8) = current_process ->r8 ; 
+	*(int*)(stack_pointer+WORD_SIZE*9) = current_process ->r9 ; 
+	*(int*)(stack_pointer+WORD_SIZE*10) = current_process ->r10 ; 
+	*(int*)(stack_pointer+WORD_SIZE*11) = current_process ->r11 ; 
+	*(p_stack_pointer+12) = current_process ->r12 ;
+	*(p_stack_pointer+13) = current_process ->lr_usr;
+
+	__asm("cps 0b11111");				// passage au mode systeme
+	__asm("mov lr, %0" : :"r"(current_process->lr_usr));    // ecriture registre
+	__asm("mov sp, %0" : :"r"(current_process->sp));    // ecriture registre
+	__asm("cps 0b10011"); 				// passage au mode svc
+	
+
+
+	
+
+}
+
+
+void do_sys_yieldto()
+{
+	int lr,i;
+	int * p_stack_pointer = (int*)(stack_pointer);
+	pcb_s* dest = (pcb_s *)(*(p_stack_pointer +1));
+
+	__asm("mov %0, lr" : "=r"(lr) );  // lecture registre
+
+
+	// Sauvegarde process current
+	//current_process->r0 = *(p_stack_pointer); 
+	int * p_curr_procss = (int*)current_process;
+	for(i=0;i<14;i++)
+	{
+		*(p_curr_procss+i) = *(p_stack_pointer+i);
+	}
+
+	__asm("cps 0b11111");					// passage au mode systeme
+	__asm("mov %0, lr" : "=r"(current_process->lr_usr) );   // lecture registre
+	__asm("mov %0, sp" : "=r"(current_process->sp) );   	// lecture registre
+	__asm("cps 0b10011"); 					// passage au mode svc
+
+	// echange de context
+	current_process = dest;
+
+	for(i=0;i<14;i++)
+	{
+		*(p_stack_pointer+i) = *(p_curr_procss+i);
+	}
+
+	__asm("cps 0b11111");					// passage au mode systeme
+	__asm("mov lr, %0" : :"r"(current_process->lr_usr));    // ecriture registre
+	__asm("mov sp, %0" : :"r"(current_process->sp));    	// ecriture registre
+	__asm("cps 0b10011"); 					// passage au mode svc
+	
+}
+
+
+
+
+
+
+
+#include <stdint.h>
+
+#ifndef SYSCALL_H
+#define SYSCALL_H
+
+int pile_context;
+
+typedef struct {int r0;int r1;int r2;int r3;int r4;int r5;int r6;int r7;int r8;int r9;int r10;int r11;int r12;int lr_svc;int lr_usr;int*sp; int CPSR_user;} pcb_s;
+
+void sys_reboot();
+void swi_handler(void);
+void do_sys_reboot();
+
+void sys_nop();
+void do_sys_nop();
+
+void sys_settime(uint64_t date_ms);
+void do_sys_settime();
+
+uint64_t sys_gettime();
+void do_sys_gettime();
+
+#endif
+#include <stdint.h>
+
+#ifndef SYSCALL_H
+#define SYSCALL_H
+
+int pile_context;
+
+typedef struct {int r0;int r1;int r2;int r3;int r4;int r5;int r6;int r7;int r8;int r9;int r10;int r11;int r12;int lr_svc;int lr_usr;int*sp; int CPSR_user;} pcb_s;
+
+void sys_reboot();
+void swi_handler(void);
+void do_sys_reboot();
+
+void sys_nop();
+void do_sys_nop();
+
+void sys_settime(uint64_t date_ms);
+void do_sys_settime();
+
+uint64_t sys_gettime();
+void do_sys_gettime();
+
+void sys_yieldto(pcb_s* dest);
+void do_sys_yieldto();
+
+
+#endif
+MEMORY {
+	RAM : ORIGIN = 0x8000, LENGTH = 0x20000000-0x8000
+    PERIPHERALS : ORIGIN = 0x20000000, LENGTH = 0x20FFFFFF - 0x20000000
+}
+
+KERNEL_STACK_SIZE = 512;
+SYS_STACK_SIZE = 512;
+IRQ_STACK_SIZE = 512;
+
+USER_STACKS_SIZE = 0x100000;
+
+SECTIONS {
+
+	.text : {
+	      build/init.o(.text*)
+	} > RAM
+
+	.text : {
+	      *(.text*)
+	} > RAM
+
+     __bss_start = .;
+    .bss : {
+    	 *(.bss*)
+    } > RAM
+    __bss_end__ = .;
+
+    __rodata_start__ = .;
+    .rodata : {
+	 *(.rodata*)
+    } > RAM
+    __rodata_end__ = .;
+
+    __data_start__ = .;
+    .data : {
+    	 *(.data)
+    } > RAM
+    __data_end__ = .;
+
+    .stack : {
+
+       __stack_start__ = .; 
+	   . += KERNEL_STACK_SIZE ;
+	   . = ALIGN(4);
+	   __svc_stack_end__ = .;
+	   
+	   . += SYS_STACK_SIZE ;
+	   . = ALIGN(4);
+	   __sys_stack_end__ = .;
+
+       . += IRQ_STACK_SIZE ;
+	   . = ALIGN(4);
+	   __irq_stack_end__ = .;
+
+   	   __stacks_end__ = .;
+	   
+    } > RAM
+
+    . = ALIGN(4096);
+    __kernel_heap_start__ = .;
+	. = 0xFFFFFF;
+    __kernel_heap_end__ = .;
+    . = ALIGN(4096);
+    __after_kernel_heap__ = .;
+
+    . = 0x20000000;
+    .devices : {
+        __devices_start__ = .;
+        . += 0xFFFFFF;
+        __devices_end__ = .;
+    } > PERIPHERALS
+}
+#include "gpio.h"
+#include "asm_tools.h"
+#include "uart.h"
+#include "config.h"
+
+//
+// Constante des puissances de 10
+static const int TEN_POW[10] = {	1,
+									10,
+									100,
+									1000,
+									10000,
+									100000,
+							        1000000,
+							        10000000,
+							        100000000,
+							        1000000000 };
+// Variable publique d'erreur
+int uart_error;
+
+//
+// Initialisation
+void uart_init(void)
+{
+	// On désactive UART
+	Set32(UART_CR, 0u);
+
+	// Initialisation GPIO (14 et 15)
+	// On règle la fonction sur ALT0 pour les bons pins
+	Set32(GPIO_FSEL1, Get32(GPIO_FSEL1) | (GPIO_ALT0 << GPIO_TDX0_OFF));
+	Set32(GPIO_FSEL1, Get32(GPIO_FSEL1) | (GPIO_ALT0 << GPIO_RDX0_OFF));
+	// On règle le pull down
+	Set32(GPIO_PUD, 0u);
+	delay(150u);
+	Set32(GPIO_PUDCLK0, (1u << UART_TXD0_PIN) | (1u << UART_RDX0_PIN));
+	delay(150u);
+	Set32(GPIO_PUD, 0u);
+	Set32(GPIO_PUDCLK0, 0u);
+
+	// On initialisation UART
+	// On clear la line
+	Set32(UART_LCRH, 0u);
+	// On clear les intéruptions
+	Set32(UART_ICR, 0u);
+	// On règles le baud rate à 115200 baud
+	Set32(UART_IBRD, 1u);
+	Set32(UART_FBRD, 40u);
+	// Line control :
+	// - break disable
+	// - parity disable
+	// - stop bits disable
+	// - fifo disabled
+	// - word length = 8 bits
+	Set32(UART_LCRH, (3u << 5u));
+	// Seuil FIFO
+	// - On n'utilise pas la FIFO
+	Set32(UART_IFLS, 0u);
+	// Interruption
+	//  On masque tout
+	Set32(UART_IMSC, (1u << 1u) | (1u << 4u) | (1u << 5u)
+						| (1u << 6u) | (1u << 7u) | (1u << 8u)
+						| (1u << 9u) | (1u << 10u));
+	// Controle :
+	// - on active l'UART
+	// - pas de loopback
+	// - activation de la réception/émission
+	// - pas de RTS
+	// - pas de flowcontrol
+	Set32(UART_CR, (1u << 0u) | (1u << 8u) | (1u << 9u));
+}
+
+//
+// Permet d'envoyer des chaine de caractère. Celle-ci doit se terminer
+//	par le caractère nul.
+void uart_send_str(const char *data)
+{
+	if (*data == 0)
+	{
+		return;
+	}
+
+	do
+	{
+		// On attend que l'UART soit disponible
+		while ((Get32(UART_FR) & (1u << 5u)) != 0u);
+		// On écrit la donnée
+		Set32(UART_DR, (unsigned int)*(data++));
+
+	} while (*data != 0);
+
+	// On attend que l'UART soit disponible
+	while ((Get32(UART_FR) & (1u << 5u)) != 0u);
+	// Puis on envoie le caractère nul
+#if RPI
+	Set32(UART_DR, 0u);
+#endif
+}
+
+//
+// Permet d'envoyer un entier signé
+void uart_send_int(int n)
+{
+	int ten_pow;
+	char str[16];
+	int str_i = 0;
+	int start_conv = 0;
+
+	// Cas du 0
+	if (n == 0)
+	{
+		str[0] = '0';
+		str[1] = 0;
+		uart_send_str(str);
+		return;
+	}
+
+	// Négatif ?
+	if ((n & 0x80000000) != 0)
+	{
+		str[str_i++] = '-';
+		n -= 1;
+		n = ~n;
+	}
+
+	for (ten_pow = 9; ten_pow >= 0; ten_pow--)
+	{
+		int digit = 0;
+
+		while (n >= TEN_POW[ten_pow])
+		{
+			n -= TEN_POW[ten_pow];
+			digit++;
+		}
+		if (digit > 0)
+		{
+			str[str_i++] = (char)(digit + 48);
+
+			if (start_conv == 0)
+			{
+				int zero_pad_i;
+
+				for (zero_pad_i = 0; zero_pad_i < ten_pow; zero_pad_i++)
+				{
+					str[str_i + zero_pad_i] = '0';
+				}
+				str[str_i + zero_pad_i] = 0;
+				
+				start_conv = 1;
+			}
+		}
+		else if (start_conv == 1)
+		{
+			str_i++;
+		}
+	}
+
+	uart_send_str(str);
+}
+
+//
+// Permet de recevoir des caractères
+// Block jusqu'a la reception de n-1 caractères, ou la reception
+//	du caractère nul.
+// NOTE : Un caractère nul est placé automatiquement en fin de
+//	chaine.
+int uart_receive_str(char *buffer, unsigned int n)
+{
+	unsigned int byte;
+	int i;
+
+	if (n == 0u)
+	{
+		return 0;
+	}
+
+	i = 0;
+	n--;
+	do
+	{
+		// On attend que se ne soit pas vide
+		while ((Get32(UART_FR) & (1u << 4u)) != 0);
+		// Lecture du byte
+		byte = Get32(UART_DR) & 0xFFu;
+
+		// On vérifique que se n'est pas la fin
+		if (byte == 0u)
+		{
+			break;
+		}
+
+		*(buffer++) = (char)byte;
+		i++;
+	}
+	while (--n != 0u);
+
+	*buffer = 0; // Caractère de fin
+
+	return i;
+}
+
+//
+// Permet de lire un entier signé.
+// Renvoie la valeur lue
+// NOTE : en cas d'erreur, uart_error est mis à -1
+int uart_receive_int(void)
+{
+	char buffer[16];
+	char *data = buffer;
+	int neg;
+	int str_c, digit, n;
+
+	uart_error = 0;
+
+	// On lit la chaine de caractère correspondant au nombre
+	str_c = uart_receive_str(buffer, 16u);
+
+	// Si il est négatif...
+	if (*data == '-')
+	{
+		neg = 1;
+		data++;
+		str_c--;
+	}
+	else
+	{
+		neg = 0;
+	}
+
+	// On enlève les 0 de tête, si il y en a
+	while ((str_c > 0) && (*data == 48))
+	{
+		data++;
+		str_c--;
+	}
+
+	// Si il ne reste plus rien, c'est que on avait un 0
+	if (str_c <= 0)
+	{
+		return 0;
+	}
+	
+	// On vérifie que le nombre n'est pas trop grand
+	if (str_c > 10)
+	{
+		uart_error = -1;
+		return 0;
+	}
+
+	n = 0;
+	do
+	{
+		digit = (int)*(data++);
+		if ((digit < 48) || (digit > 57))
+		{
+			uart_error = -1;
+			return 0;
+		}
+		else if (digit == 48)
+		{
+			str_c--;
+		}
+		else
+		{
+			n += (digit - 48) * TEN_POW[--str_c];
+		}
+	}
+	while (str_c > 0);
+
+	if (neg == 1)
+	{
+		n = -(n);
+	}
+
+	return n;
+}
+
+//
+// Permet de savoir si la receive fifo est vide
+int uart_is_receive_fifo_empty(void)
+{
+	if ((Get32(UART_FR) & (1 << 4)) != 0)
+	{
+		return 0;
+	}
+
+	return 1;
+}
+#ifndef __HEADER_UART
+#define __HEADER_UART
+
+//
+// Registres UART
+#define UART_DR		0x20201000u	// Data register
+#define UART_RSRECR	0x20201004u
+#define UART_FR		0x20201018u	// Flag register
+#define UART_IBRD	0x20201024u	// Integer Daud rate divisor
+#define UART_FBRD	0x20201028u	// Fractional Baud rate divisor
+#define UART_LCRH	0x2020102Cu	// Line control register
+#define UART_CR 	0x20201030u	// Control register
+#define UART_IFLS	0x20201034u	// Interupt FIFO level select register
+#define UART_IMSC	0x20201038u	// Interupt mask set clear register
+#define UART_RIS	0x2020103Cu	// Raw Interupt Status register
+#define UART_MIS	0x20201040u	// Masked Interupt Status Register
+#define UART_ICR	0x20201044u	// Interupt clear register
+#define UART_ITCR	0x20201080u	// Test Control register
+#define UART_ITIP	0x20201084u	// Integration test input reg
+#define UART_ITOP	0x20201088u	// Integration test output reg
+#define UART_TDR	0x2020108Cu	// Test data reg
+// Constantes GPIO utiles aux UART
+#define UART_TXD0_PIN	14u	// UART TDX0 pin sur ALT0
+#define UART_RDX0_PIN	15u // UART RDX0 pin sur ALT0
+#define GPIO_ALT0		4u	// GPIO fonction ALT0
+#define GPIO_TDX0_OFF	((14u % 10u) * 3u)
+#define GPIO_RDX0_OFF	((15u % 10u) * 3u)
+
+//
+// Variable d'erreur
+extern int uart_error;
+
+// Initialise l'UART
+void uart_init(void);
+
+// Envoie un caractère
+void uart_send_char(const char c);
+
+// Permet d'envoyer des chaine de caractère. Celle-ci doit se terminer
+//	par le caractère nul.
+void uart_send_str(const char *data);
+
+// Permet d'envoyer un entier signé
+void uart_send_int(int n);
+
+// Permet de savoir si la receive fifo est vide
+int uart_is_receive_fifo_empty(void);
+
+// Permet de recevoir une chaine de caractère.
+// Bloque jusqu'a la reception de n-1 caractères, ou la reception
+//	du caractère nul.
+// NOTE : Un caractère nul est placé automatiquement en fin de
+//	chaine contenu dans le buffer.
+int uart_receive_str(char *buffer, unsigned int n);
+
+// Permet de lire un entier signé.
+// Renvoie la valeur lue
+// NOTE : en cas d'erreur, uart_error est mis à -1
+int uart_receive_int(void);
+
+#endif
+#include "util.h"
+
+void
+kernel_panic(char* string, int number)
+{
+    for(;;)
+    {
+        /* do nothing */
+    }
+}
+
+#ifndef UTIL_H
+#define UTIL_H
+
+#define PANIC() do { kernel_panic(__FILE__,__LINE__) ; } while(0)
+#define ASSERT(exp) do { if(!(exp)) PANIC(); } while(0)
+
+void kernel_panic(char* string, int number);
+
+#endif
