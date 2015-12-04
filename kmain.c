@@ -6,7 +6,25 @@
 
 
 
-#define NB_PROCESS 2
+#define NB_PROCESS 4
+
+void user_process4()
+{
+  int n = -1;
+  while(1){
+    n--;
+    // sys_yield();
+  }
+}
+
+void user_process3()
+{
+  int n = -1;
+  while(1){
+    n--;
+    // sys_yield();
+  }
+}
 
 void user_process2()
 {
@@ -36,8 +54,10 @@ void kmain(void){
 	
 	//int i;
 	//for(i=0;i<NB_PROCESS;i++){
-	create_process((func_t*) &user_process1);
-	create_process((func_t*) &user_process2);
+	create_priority_process((func_t*) &user_process1,2);
+	create_priority_process((func_t*) &user_process2,0);
+	create_priority_process((func_t*) &user_process3,12);
+	create_priority_process((func_t*) &user_process4,10);
 		//}
  
 	timer_init();
