@@ -16,7 +16,7 @@ swi_vector:        .word swi_handler
 prefetch_vector:   .word prefetch_asm_handler
 data_vector:       .word data_asm_handler
 unused_vector:     .word unused_asm_handler
-irq_vector:        .word irq_asm_handler
+irq_vector:        .word irq_handler
 fiq_vector:        .word fiq_asm_handler
 
 	
@@ -74,7 +74,7 @@ prefetch_asm_handler:
 	b irq_asm_handler
 
 irq_asm_handler:
-	b irq_asm_handler
+	@b irq_asm_handler
 
 unused_asm_handler:
 	b unused_asm_handler

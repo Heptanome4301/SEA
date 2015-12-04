@@ -11,7 +11,8 @@
 #define NOP_INT 2
 #define SYS_TIME 3
 #define SYS_TIME_GT 4
-
+#define YIELDTO 5
+#define YIELD 6
 
 
 
@@ -58,6 +59,15 @@ void __attribute__((naked)) swi_handler(void)
 		case YIELDTO :
 			do_sys_yieldto();
 			break;
+			
+		case YIELD : 
+			do_sys_yield();
+			break;
+			
+		case EXIT:
+			do_sys_exit();
+			break;
+			
 		/*
 		case SYS_SET_SCHEDULER :
 			do_sys_set_scheduler();
@@ -101,6 +111,7 @@ void sys_nop()
 	
 
 }
+
 void do_sys_nop()
 {
 
@@ -168,3 +179,39 @@ void do_sys_gettime()
 	*(int *)(pile_context+sizeof(int)) = (int)((date_ms & 0xffffffff00000000) >> 32 ) ; // fort
 
 }
+
+
+
+void __attribute__((naked)) irq_handler(void)
+{
+
+  //sauvegarde du context
+  __asm("stmfd sp!, {r0-r12,lr}");
+  __asm("mov %0, sp" : "=r"(pile_context) );      
+  
+  *(((int*)pile_context)+13) -= 4;
+ 
+  rearmer();
+  do_sys_yield_irq();
+
+  //restauration du context
+  __asm("ldmfd sp!, {r0-r12,pc}^");
+
+}
+
+
+void rearmer(void)
+{
+ /* 10 ms seems good */
+  set_next_tick_default();
+  
+  /* Enable timer irq */
+  ENABLE_TIMER_IRQ();
+
+  DISABLE_IRQ();
+  ENABLE_IRQ();
+
+}
+
+
+
