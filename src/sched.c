@@ -5,13 +5,20 @@
 
 #define STACK_SIZE 10000
 #define WORD_SIZE 4
+#define SCHEDULER 1
+
+
+enum sched_type {
+	sched_round_robin,
+	sched_fcfs
+};
 
 
 pcb_s kmain_process;
 
 
 
-void sched_init()
+void sched_init(void)
 {
 
 	current_process = &kmain_process;
@@ -21,33 +28,84 @@ void sched_init()
 }
 
 
-void create_process(func_t* entry)
+
+
+void init_sched_round_robin(pcb_s* res)
 {
-	pcb_s* res = (pcb_s*)kAlloc(sizeof(pcb_s));
-	res -> lr_usr = (int)entry;
+		res -> next_process = kmain_process . next_process ;
+		
+		last_process->next_process = res;
+		last_process = res;
 
-	res -> lr_svc = (int)entry;
+		if(current_process == &kmain_process)
+		current_process = kmain_process.next_process;
+}
+
+
+void init_sched_fcfs(pcb_s* res){
+	res -> next_process = kmain_process.next_process  ;
+	kmain_process.next_process = res;
 	
-	int*sp = (int*)kAlloc(STACK_SIZE); // 10Ko
-	res -> sp = (int*)(((int)sp) +( STACK_SIZE/WORD_SIZE )) ;
-
-	res ->TERMINATED = 0;
-
-	res -> next_process = kmain_process . next_process ;
-	
-	last_process->next_process = res;
-	last_process = res;
-
 	if(current_process == &kmain_process)
-	 current_process = kmain_process.next_process;
+		current_process = kmain_process.next_process;
 }
 
 
 
+void define_sched(pcb_s* res)
+{
+	switch(SCHEDULER){
+	
+	case sched_round_robin :
+		init_sched_round_robin(res);
+		break;
+	
+	case sched_fcfs :
+		init_sched_fcfs(res);
+		break;
+	}
+}
+
+
+void create_process(func_t* entry)
+{
+	
+	pcb_s* res = (pcb_s*)kAlloc(sizeof(pcb_s));
+	
+	res -> lr_usr = (int)entry;
+	res -> lr_svc = (int)entry;
+	res ->  CPSR_user = 0x10; // mode user
+	
+	int*sp = (int*)kAlloc(STACK_SIZE); // 10Ko
+	res -> sp = (int*)(((int)sp) +( STACK_SIZE/WORD_SIZE )) ;
+	res ->TERMINATED = 0;
+
+	define_sched(res);
+}
+
+
+void elect_sched_round_robin()
+{
+  
+	  
+  if( current_process->next_process != NULL )
+    current_process = current_process->next_process;
+	
+}
+
+void elect_sched_fcfs()
+{
+  
+  if( kmain_process .next_process != NULL )
+    current_process = kmain_process .next_process;
+	
+	
+}
+
 void elect(){
 	
-  
-  if(current_process->next_process->TERMINATED)
+	// supprimer le process fini 
+	if(current_process->next_process->TERMINATED)
 	{
 		pcb_s* tmp =  current_process->next_process;
 		current_process->next_process = tmp->next_process;
@@ -59,10 +117,21 @@ void elect(){
 		kFree((void*)tmp,((unsigned int)sizeof(pcb_s)));
 	}
 	
-  if( current_process->next_process == NULL )
-    terminate_kernel();
-  else
-    current_process = current_process->next_process;
+	if( current_process->next_process == NULL )
+		terminate_kernel();
+	
+	
+	// elir le prochain process selon le type de sched
+	switch(SCHEDULER){
+	
+	case sched_round_robin :
+		elect_sched_round_robin();
+		break;
+	
+	case sched_fcfs :
+		elect_sched_fcfs();
+		break;
+	}
 	
 }
 
@@ -159,14 +228,18 @@ void do_sys_yieldto(void)
 		*(p_curr_procss+i) = *(p_pile_context+i);
 	}
 
-	__asm("cps 0b11111");					// passage au mode systeme
-	__asm("mov %0, lr" : "=r"(current_process->lr_usr) );   // lecture registre
-	__asm("mov %0, sp" : "=r"(current_process->sp) );   	// lecture registre
-	__asm("cps 0b10011"); 					// passage au mode svc
+	// passage au mode systeme
+	__asm("cps 0b11111");					
+	__asm("mov %0, lr" : "=r"(current_process->lr_usr) );   
+	__asm("mov %0, sp" : "=r"(current_process->sp) );   
+	
+	
+	// passage au mode svc	
+	__asm("cps 0b10011"); 					
 
 	
 	__asm("mrs r3,SPSR");
-	__asm("mov %0, r3" : "=r"(current_process-> CPSR_user) );   // lecture registre
+	__asm("mov %0, r3" : "=r"(current_process-> CPSR_user) );   
 	
 
 	// echange de context
@@ -191,6 +264,7 @@ void do_sys_yieldto(void)
 
 
 
+// pcb_s* current_process;
 void do_sys_yield_irq(void)
 {
 	int i;
@@ -213,9 +287,7 @@ void do_sys_yield_irq(void)
 	__asm("cps 0b10010"); 				
 
 	
-	//__asm("mrs r3, SPSR_irq");
-	__asm("mrs r3, SPSR");
-	__asm("mov %0, r3" : "=r"(current_process-> CPSR_user) );   
+	__asm("mrs %0, SPSR" : "=r" (current_process-> CPSR_user) );
 	
 
 	// echange de context
@@ -238,9 +310,9 @@ void do_sys_yield_irq(void)
 	// passage au mode IRQ    
 	__asm("cps 0b10010"); 				
 	
-	__asm("mov r3, %0" : :"r"(current_process->CPSR_user) : "r3" );
-	//__asm("msr SPSR_irq, r3"); // ca marche pas  .. 
-	//__asm("msr SPSR, r3");     // ni ca ..
+ 
+	__asm("msr SPSR, %0" :: "r" (current_process->CPSR_user) ); 
+	
 		
 }
 

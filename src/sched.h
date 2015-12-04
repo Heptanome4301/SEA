@@ -8,9 +8,10 @@
 #define EXIT 7
 
 typedef  int(func_t) (void);
-pcb_s* current_process;
 
+pcb_s* current_process;
 pcb_s* last_process;
+
 
 void sched_init();
 void create_process(func_t* entry);
