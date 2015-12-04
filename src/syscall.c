@@ -5,7 +5,6 @@
 #include "hw.h"
 #include "sched.h"
 
-#define WORD_SIZE 4
 
 #define REBOOT_INT 1
 #define NOP_INT 2

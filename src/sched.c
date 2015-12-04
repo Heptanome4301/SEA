@@ -2,6 +2,11 @@
 #include "sched.h"
 #include "hw.h"
 
+
+#define STACK_SIZE 10000
+#define WORD_SIZE 4
+
+
 pcb_s kmain_process;
 
 
@@ -23,8 +28,8 @@ void create_process(func_t* entry)
 
 	res -> lr_svc = (int)entry;
 	
-	int*sp = (int*)kAlloc(10000); // 10Ko
-	res -> sp = (int*)(((int)sp) +( 10000/4 )) ;
+	int*sp = (int*)kAlloc(STACK_SIZE); // 10Ko
+	res -> sp = (int*)(((int)sp) +( STACK_SIZE/WORD_SIZE )) ;
 
 	res ->TERMINATED = 0;
 
@@ -141,7 +146,7 @@ void do_sys_yield(void)
 
 
 
-void do_sys_yieldto()
+void do_sys_yieldto(void)
 {
 	int i;
 	int * p_pile_context = (int*)(pile_context);
