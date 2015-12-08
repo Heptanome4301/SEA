@@ -3,6 +3,7 @@
 #include "util.h"
 #include "syscall.h"
 #include "sched.h"
+#include "vmem.h"
 
 
 
@@ -50,7 +51,7 @@ void user_process1()
 
 void kmain(void){
 
-	sched_init();
+	/*sched_init();
 	
 	//int i;
 	//for(i=0;i<NB_PROCESS;i++){
@@ -63,9 +64,17 @@ void kmain(void){
 	timer_init();
 	ENABLE_IRQ();
 
-	__asm("cps 0x10");
+	
+	start_current_process();*/
 
-	start_current_process();
+  vmem_init();
+  uint32_t petit_nom = vmem_translate(0x48000, NULL);
+  uint32_t grand_nom = vmem_translate(0x1500000, NULL);
+  petit_nom++;
+  grand_nom++;
+
+  __asm("cps 0x10");
+
 
 }
 
