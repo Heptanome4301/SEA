@@ -6,14 +6,14 @@
 #define STACK_SIZE 10000
 #define WORD_SIZE 4
 
-#define SCHEDULER 2
+#define SCHEDULER 1
 
 
 pcb_s kmain_process;
 
 enum sched_type {
 	sched_round_robin,
-	sched_fcfs,
+	sched_edf,
 	sched_priority
 	
 };
@@ -27,6 +27,8 @@ void sched_init(void)
 {
 
 	current_process = &kmain_process;
+	//kamin_process->next_process = &kmain_process;
+	
 	last_process = &kmain_process;
 	kheap_init();
 
@@ -61,17 +63,16 @@ void init_sched_round_robin(pcb_s* res)
 }
 
 
-void init_sched_fcfs(pcb_s* res){
-	res -> next_process = kmain_process.next_process  ;
-	kmain_process.next_process = res;
+void init_sched_edf(pcb_s* res,int param){
 	
-	if(current_process == &kmain_process)
-		current_process = kmain_process.next_process;
+	res -> DUE_TIME = param;
+	init_sched_round_robin(res);
+	
 }
 
 
 
-void define_sched(pcb_s* res,int priority)
+void define_sched(pcb_s* res,int param)
 {
 	switch(SCHEDULER){
 	
@@ -80,18 +81,18 @@ void define_sched(pcb_s* res,int priority)
 		break;
 		
 	case sched_priority :
-		init_sched_priority(res,priority);
+		init_sched_priority(res,param); // param ici est la priorite du process
 		break;
 	
-	case sched_fcfs :
-		init_sched_fcfs(res);
+	case sched_edf :
+		init_sched_edf(res,param);// pram ici est l'echeance du process
 		break;
 	}
 }
 
 
 
-void create_process(func_t* entry,int priority)
+void create_process(func_t* entry,int param)
 {
 	
 	pcb_s* res = (pcb_s*)kAlloc(sizeof(pcb_s));
@@ -105,25 +106,87 @@ void create_process(func_t* entry,int priority)
 	res -> sp = (int*)(((int)sp) +( STACK_SIZE/WORD_SIZE )) ;
 	res ->TERMINATED = 0;
 
-	define_sched(res,priority);
+	define_sched(res,param);
 }
 
 
 void elect_sched_round_robin()
 {
-  
-	  
+    
   if( current_process->next_process != NULL )
     current_process = current_process->next_process;
 	
 }
 
-void elect_sched_fcfs()
+void elect_sched_edfx()
 {
   
-  if( kmain_process .next_process != NULL )
-    current_process = kmain_process .next_process;
+  //if( kmain_process .next_process != NULL )
+  //  current_process = kmain_process .next_process;
+  pcb_s* temp , *elected ; 
+  
+  delete_timed_out_processes();
+  
+  temp = current_process;
+  elected = current_process;
+  
+  do{
+	  if(current_process->DUE_TIME < elected->DUE_TIME) {
+		  elected = current_process;
+	  }
+	  current_process->DUE_TIME--;
+	  
+	  if ( current_process->  DUE_TIME <= -1 )
+	  {
+		current_process->TERMINATED = 1;
+	  }
+	  
+	  current_process=current_process->next_process;
 	
+  } while(current_process != temp);
+  
+  current_process=elected; 
+	  
+}
+
+void  elect_sched_edf()
+{
+	delete_timed_out_processes();
+	
+	pcb_s* temp = kmain_process . next_process;
+	pcb_s* elected = kmain_process . next_process;
+  
+	do{
+		if(temp->DUE_TIME < elected->DUE_TIME) {
+		  elected = temp;
+		}
+		
+		temp->DUE_TIME--;
+		temp = temp->next_process;
+		
+	
+  } while(temp != kmain_process.next_process);
+
+  current_process=elected;
+}
+
+void delete_timed_out_processes(){
+
+ pcb_s* temp = kmain_process . next_process;
+  
+  do{
+	  if(temp->next_process->DUE_TIME <= 0) {		  
+		//if(temp->next_process == current_process){
+		//	current_process = current_process->next_process;
+		//}
+		temp->next_process->TERMINATED = 1;
+		del_terminated_process (temp);
+	  }
+	  temp = temp->next_process;
+	
+  } while(temp != kmain_process.next_process);
+	
+
 	
 }
 
@@ -142,8 +205,8 @@ void elect(){
 		elect_priority();
 		break;
 	
-	case sched_fcfs :
-		elect_sched_fcfs();
+	case sched_edf :
+		elect_sched_edf();
 		break;
 	}
 }
@@ -158,15 +221,25 @@ void del_terminated_process (pcb_s* previous_process) { // supprime le process q
 		previous_process->next_process = tmp->next_process;
 
 
-		if(previous_process == previous_process->next_process)
+		if(tmp == kmain_process.next_process){ // cas ou on supprime le next du kmain
+			kmain_process.next_process = tmp -> next_process;
+			kmain_process.next_process -> next_process = tmp -> next_process;
+		}
+
+		if(previous_process == previous_process->next_process) // cas ou il reste qu'un seul process
 		  kmain_process .next_process = NULL;
 
 		kFree((void*)tmp->sp,((unsigned int)STACK_SIZE));
 		kFree((void*)tmp,((unsigned int)sizeof(pcb_s)));
 	}
 	
+	
 	if(current_process == &kmain_process)
 	 current_process = kmain_process.next_process;
+
+	if(kmain_process.next_process == NULL){
+		terminate_kernel();
+	}
 
 }
 
@@ -204,10 +277,6 @@ void elect_round_robin(){
 			terminate_kernel();
 		else
 			current_process = current_process->next_process; // On donne la main au processus suivant
-
-
-	
-	
 }
 
 
