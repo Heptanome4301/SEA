@@ -55,10 +55,10 @@ void kmain(void){
 	
 	//int i;
 	//for(i=0;i<NB_PROCESS;i++){
-	create_priority_process((func_t*) &user_process1,2);
-	create_priority_process((func_t*) &user_process2,0);
-	create_priority_process((func_t*) &user_process3,12);
-	create_priority_process((func_t*) &user_process4,10);
+	create_process((func_t*) &user_process1,2);
+	create_process((func_t*) &user_process2,0);
+	create_process((func_t*) &user_process3,12);
+	create_process((func_t*) &user_process4,10);
 		//}
  
 	timer_init();
