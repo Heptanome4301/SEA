@@ -5,16 +5,21 @@
 
 #define STACK_SIZE 10000
 #define WORD_SIZE 4
-#define SCHEDULER 1
 
-
-enum sched_type {
-	sched_round_robin,
-	sched_fcfs
-};
+#define SCHEDULER 2
 
 
 pcb_s kmain_process;
+
+enum sched_type {
+	sched_round_robin,
+	sched_fcfs,
+	sched_priority
+	
+};
+
+
+
 
 
 
@@ -27,6 +32,20 @@ void sched_init(void)
 
 }
 
+
+void init_sched_priority(pcb_s* res, int priority) {
+	
+	
+	res -> PRIORITY = priority;
+	
+	res -> next_process = kmain_process . next_process ;
+	
+	last_process->next_process = res;
+	last_process = res;
+
+	if(current_process == &kmain_process)
+	 current_process = kmain_process.next_process;
+}
 
 
 
@@ -52,12 +71,16 @@ void init_sched_fcfs(pcb_s* res){
 
 
 
-void define_sched(pcb_s* res)
+void define_sched(pcb_s* res,int priority)
 {
 	switch(SCHEDULER){
 	
 	case sched_round_robin :
 		init_sched_round_robin(res);
+		break;
+		
+	case sched_priority :
+		init_sched_priority(res,priority);
 		break;
 	
 	case sched_fcfs :
@@ -67,11 +90,13 @@ void define_sched(pcb_s* res)
 }
 
 
-void create_process(func_t* entry)
+
+void create_process(func_t* entry,int priority)
 {
 	
 	pcb_s* res = (pcb_s*)kAlloc(sizeof(pcb_s));
-	
+
+
 	res -> lr_usr = (int)entry;
 	res -> lr_svc = (int)entry;
 	res ->  CPSR_user = 0x10; // mode user
@@ -80,7 +105,7 @@ void create_process(func_t* entry)
 	res -> sp = (int*)(((int)sp) +( STACK_SIZE/WORD_SIZE )) ;
 	res ->TERMINATED = 0;
 
-	define_sched(res);
+	define_sched(res,priority);
 }
 
 
@@ -105,33 +130,83 @@ void elect_sched_fcfs()
 void elect(){
 	
 	// supprimer le process fini 
-	if(current_process->next_process->TERMINATED)
-	{
-		pcb_s* tmp =  current_process->next_process;
-		current_process->next_process = tmp->next_process;
+	del_terminated_process (current_process);
 
-		if(current_process == current_process->next_process)
-		  kmain_process .next_process = NULL;
 
-		kFree((void*)tmp->sp,((unsigned int)10000));
-		kFree((void*)tmp,((unsigned int)sizeof(pcb_s)));
-	}
-	
-	if( current_process->next_process == NULL )
-		terminate_kernel();
-	
-	
-	// elir le prochain process selon le type de sched
-	switch(SCHEDULER){
-	
+	switch(SCHEDULER) {
 	case sched_round_robin :
-		elect_sched_round_robin();
+		elect_round_robin();
+		break;
+		
+	case sched_priority :
+		elect_priority();
 		break;
 	
 	case sched_fcfs :
 		elect_sched_fcfs();
 		break;
 	}
+}
+
+
+
+void del_terminated_process (pcb_s* previous_process) { // supprime le process qui suit previous_process
+	
+	if(previous_process->next_process->TERMINATED)
+	{
+		pcb_s* tmp =  previous_process->next_process;
+		previous_process->next_process = tmp->next_process;
+
+
+		if(previous_process == previous_process->next_process)
+		  kmain_process .next_process = NULL;
+
+		kFree((void*)tmp->sp,((unsigned int)STACK_SIZE));
+		kFree((void*)tmp,((unsigned int)sizeof(pcb_s)));
+	}
+	
+	if(current_process == &kmain_process)
+	 current_process = kmain_process.next_process;
+
+}
+
+
+
+void elect_priority() {
+
+	for (pcb_s *proc = current_process->next_process; proc != current_process; proc = proc->next_process){
+		if(proc->next_process->TERMINATED){
+			del_terminated_process(proc);
+		}
+	}
+
+	pcb_s *process_prioritaire = current_process->next_process;
+
+	for (pcb_s *proc = current_process->next_process; proc != current_process; proc = proc->next_process){
+		if (proc->PRIORITY > process_prioritaire->PRIORITY) 
+			process_prioritaire = proc;
+	}
+
+	if( process_prioritaire == NULL )
+		terminate_kernel();
+	else
+		current_process = process_prioritaire; // On donne la main au processus qui a la plus grande priorité
+
+
+}
+
+
+
+void elect_round_robin(){
+	
+	
+		if( current_process->next_process == NULL )
+			terminate_kernel();
+		else
+			current_process = current_process->next_process; // On donne la main au processus suivant
+
+
+	
 	
 }
 
