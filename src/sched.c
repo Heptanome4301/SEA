@@ -25,7 +25,6 @@ enum sched_type {
 
 void sched_init(void)
 {
-
 	current_process = &kmain_process;
 	//kamin_process->next_process = &kmain_process;
 	
@@ -66,8 +65,12 @@ void init_sched_round_robin(pcb_s* res)
 void init_sched_edf(pcb_s* res,int param){
 	
 	res -> DUE_TIME = param;
-	init_sched_round_robin(res);
+	//init_sched_round_robin(res);
+	last_process -> next_process = res;
+	res->next_process = NULL;
+	last_process = res;
 	
+	current_process = kmain_process . next_process;
 }
 
 
@@ -153,6 +156,11 @@ void  elect_sched_edf()
 {
 	delete_timed_out_processes();
 	
+	if(kmain_process.next_process == NULL){
+	  current_process = &kmain_process;
+	  return;
+	}
+
 	pcb_s* temp = kmain_process . next_process;
 	pcb_s* elected = kmain_process . next_process;
   
@@ -164,29 +172,33 @@ void  elect_sched_edf()
 		temp->DUE_TIME--;
 		temp = temp->next_process;
 		
-	
-  } while(temp != kmain_process.next_process);
+	} while(temp != NULL);
 
-  current_process=elected;
+	current_process=elected;
+}
+
+void free_pcb(pcb_s* tmp){
+  kFree((void*)tmp->sp,((unsigned int)STACK_SIZE));
+  kFree((void*)tmp,((unsigned int)sizeof(pcb_s)));
 }
 
 void delete_timed_out_processes(){
 
- pcb_s* temp = kmain_process . next_process;
-  
+ pcb_s* temp = &kmain_process ;
+ pcb_s* tmp ;
+
   do{
-	  if(temp->next_process->DUE_TIME <= 0) {		  
-		//if(temp->next_process == current_process){
-		//	current_process = current_process->next_process;
-		//}
-		temp->next_process->TERMINATED = 1;
-		del_terminated_process (temp);
+          tmp = temp->next_process;
+	  if(tmp->DUE_TIME <= 0) {	 
+	    if(tmp == last_process )
+	      last_process = temp;
+	    temp->next_process = tmp->next_process;
+	    free_pcb(tmp);	
 	  }
 	  temp = temp->next_process;
 	
-  } while(temp != kmain_process.next_process);
+  } while(temp != NULL);
 	
-
 	
 }
 
@@ -225,12 +237,12 @@ void del_terminated_process (pcb_s* previous_process) { // supprime le process q
 			kmain_process.next_process = tmp -> next_process;
 			kmain_process.next_process -> next_process = tmp -> next_process;
 		}
-
-		if(previous_process == previous_process->next_process) // cas ou il reste qu'un seul process
+		// cas ou il reste qu'un seul process
+		if(previous_process == previous_process->next_process)
 		  kmain_process .next_process = NULL;
 
-		kFree((void*)tmp->sp,((unsigned int)STACK_SIZE));
-		kFree((void*)tmp,((unsigned int)sizeof(pcb_s)));
+		free_pcb(tmp);
+		
 	}
 	
 	
