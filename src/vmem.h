@@ -1,6 +1,9 @@
 #ifndef VMEM_H
 #define VMEM_H
 
+#include <stdint.h>
+#include "syscall.h"
+
 #define PAGE_SIZE 4096
 #define SECON_LVL_TT_COUN 256  //Second level pages are referenced by an 8 bits index
 #define SECON_LVL_TT_SIZE (4*SECON_LVL_TT_COUN) //Entry are on 32 bits->4 byte times the number of entry
@@ -19,5 +22,6 @@ void start_mmu_C();
 void configure_mmu_C();
 unsigned int init_kern_translation_table(void);
 void vmem_init();
+uint32_t vmem_translate(uint32_t va, pcb_s* process);
 
 #endif
