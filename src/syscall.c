@@ -179,9 +179,30 @@ void do_sys_gettime()
 
 }
 
+int led_allumee = 0;
+
+void __attribute__((naked))irq_handler(void)
+{
+
+	int tmp ;
+	
+	__asm("mov %0, lr" : "=r"(tmp) );           // lecture registre  
+	  tmp -= 4; 
+ 
+	
+	if(led_allumee) led_off();
+	else led_on();
+	led_allumee = !led_allumee ;
+	
+	rearmer();
+	
+	__asm("mov lr, %0" : :"r"(tmp) : "lr");    // ecriture registre 
+	__asm("mov pc,lr");
+
+}
 
 
-void __attribute__((naked)) irq_handler(void)
+void __attribute__((naked)) irq_handler2(void)
 {
 
   //sauvegarde du context

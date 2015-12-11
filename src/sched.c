@@ -22,7 +22,9 @@ enum sched_type {
 
 void sched_init(void)
 {
-        __asm("mrs %0, CPSR" : "=r" (kmain_process. CPSR_user) );
+    __asm("mrs %0, CPSR" : "=r" (kmain_process. CPSR_user) );
+    __asm("mov %0, SP" : "=r" (kmain_process. sp) );
+        
 	current_process = &kmain_process;
 	//kamin_process->next_process = &kmain_process;
 	
@@ -325,8 +327,7 @@ void sys_yieldto(pcb_s* dest)
 
 
 void start_current_process(){
-
-  //__asm("mov r5, %0" : :"r"(start_current_process+44) : "r5");   
+ 
   __asm("mov %0, lr" : "=r"(kmain_process . lr_svc) ); 
   
 
