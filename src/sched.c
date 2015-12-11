@@ -29,8 +29,12 @@ void sched_init(void)
 	//kamin_process->next_process = &kmain_process;
 	
 	last_process = &kmain_process;
+	
+	#if VMEM
+	vmem_init();
+	#else
 	kheap_init();
-
+	#endif
 }
 
 

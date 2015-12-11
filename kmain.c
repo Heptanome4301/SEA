@@ -4,6 +4,7 @@
 #include "syscall.h"
 #include "sched.h"
 #include "vmem.h"
+#include "kheap.h"
 
 
 
@@ -77,19 +78,6 @@ void kmain_7(void){
 	// MODE USER
 	__asm("cps 0x10");
 	start_current_process();
-
-
-	PANIC();
-
-
-  /*vmem_init();
-  uint32_t petit_nom = vmem_translate(0x48000, NULL);
-  uint32_t grand_nom = vmem_translate(0x1500000, NULL);
-  petit_nom++;
-  grand_nom++;*/
-
-  
-
 
 }
  

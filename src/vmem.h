@@ -11,7 +11,7 @@
 #define FIRST_LVL_TT_COUN 4096 //first level pages are referenced by a 12 bits index
 #define FIRST_LVL_TT_SIZE (4*FIRST_LVL_TT_COUN) //same as second level
 
-#define FIRST_LVL_TABLE_BASE 0X1000000 //start of the user space, end of the kernel heap
+#define FIRST_LVL_TABLE_BASE 0X1100000 //start of the user space, end of the kernel heap
 #define SECON_LVL_TABLE_BASE (FIRST_LVL_TABLE_BASE + FIRST_LVL_TT_SIZE)
 
 #define IO_DEVICES_RAM_START 0x20000000
