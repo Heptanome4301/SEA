@@ -48,18 +48,17 @@ void user_process1()
 }
 
 
-
-void kmain(void){
+void kmain_7(void){
 
 	sched_init();
 	 
 	//current_process-> lr_svc = (int)(func_t*)&kmain;
 	//int i;
 	//for(i=0;i<NB_PROCESS;i++){
-	create_process((func_t*) &user_process1,0);
-	create_process((func_t*) &user_process2,2);
-	create_process((func_t*) &user_process3,3);
-	create_process((func_t*) &user_process4,4);
+	//create_process((func_t*) &user_process1,0);
+	create_process((func_t*) &user_process2,1);
+	//create_process((func_t*) &user_process3,3);
+	//create_process((func_t*) &user_process4,4);
 		//}
  
 	timer_init();
@@ -69,8 +68,15 @@ void kmain(void){
 	__asm("cps 0x10");
 	start_current_process();
 	
-	//create_process((func_t*) &user_process1,1);
-	//start_current_process();
+	
+	create_process((func_t*) &user_process1,1);
+	
+	timer_init();
+	ENABLE_IRQ();
+	
+	// MODE USER
+	__asm("cps 0x10");
+	start_current_process();
 
 
 	PANIC();
@@ -86,12 +92,18 @@ void kmain(void){
 
 
 }
+ 
 
 
+void pause(int mlsced){
+	timer_init();
+	ENABLE_IRQ();
+	
+}
 
+//extern int led_allumee ;
 
-
-void kmain_7_1(void){
+void kmain(void){
 
   timer_init();
   ENABLE_IRQ();
@@ -99,10 +111,29 @@ void kmain_7_1(void){
  __asm("cps 0x10");
 
 //	sys_yieldto(p1);*/
-  int i = 0 ;
-  while(1) i++;
+  
+  while(1) {
+  }
 
   PANIC();  
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
