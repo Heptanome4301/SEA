@@ -190,8 +190,9 @@ void __attribute__((naked)) irq_handler(void)
   
   *(((int*)pile_context)+13) -= 4;
  
-  rearmer();
   do_sys_yield_irq();
+  rearmer();
+  
 
   //restauration du context
   __asm("ldmfd sp!, {r0-r12,pc}^");
@@ -201,7 +202,7 @@ void __attribute__((naked)) irq_handler(void)
 
 void rearmer(void)
 {
- /* 10 ms seems good */
+  /* 10 ms seems good */
   set_next_tick_default();
   
   /* Enable timer irq */
@@ -209,7 +210,7 @@ void rearmer(void)
 
   DISABLE_IRQ();
   ENABLE_IRQ();
-
+ 
 }
 
 

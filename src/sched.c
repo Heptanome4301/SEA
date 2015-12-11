@@ -20,11 +20,9 @@ enum sched_type {
 
 
 
-
-
-
 void sched_init(void)
 {
+        __asm("mrs %0, CPSR" : "=r" (kmain_process. CPSR_user) );
 	current_process = &kmain_process;
 	//kamin_process->next_process = &kmain_process;
 	
@@ -61,16 +59,42 @@ void init_sched_round_robin(pcb_s* res)
 		current_process = kmain_process.next_process;
 }
 
+void insert_new_process(pcb_s* new_process)
+{
+  if(last_process == &kmain_process){
+    kmain_process.next_process = new_process;
+    new_process->next_process = NULL;
+    last_process = new_process;
+    return;
+  }
+
+  pcb_s* tmp = &kmain_process;
+  while(tmp->next_process != NULL && 
+	tmp->next_process->DUE_TIME < new_process->DUE_TIME)
+    {
+      tmp = tmp->next_process;
+    }
+ 
+  new_process->next_process = tmp->next_process;
+  tmp->next_process = new_process;
+
+  if(new_process->next_process == NULL) 
+    last_process = new_process;
+  
+
+}
 
 void init_sched_edf(pcb_s* res,int param){
 	
 	res -> DUE_TIME = param;
-	//init_sched_round_robin(res);
-	last_process -> next_process = res;
-	res->next_process = NULL;
-	last_process = res;
 	
+	//last_process -> next_process = res;
+	//res->next_process = NULL;
+	//last_process = res;
+	
+	insert_new_process(res);
 	current_process = kmain_process . next_process;
+	
 }
 
 
@@ -100,7 +124,6 @@ void create_process(func_t* entry,int param)
 	
 	pcb_s* res = (pcb_s*)kAlloc(sizeof(pcb_s));
 
-
 	res -> lr_usr = (int)entry;
 	res -> lr_svc = (int)entry;
 	res ->  CPSR_user = 0x10; // mode user
@@ -121,38 +144,28 @@ void elect_sched_round_robin()
 	
 }
 
-void elect_sched_edfx()
+void elect_sched_edf()
 {
-  
-  //if( kmain_process .next_process != NULL )
-  //  current_process = kmain_process .next_process;
-  pcb_s* temp , *elected ; 
-  
   delete_timed_out_processes();
-  
-  temp = current_process;
-  elected = current_process;
-  
-  do{
-	  if(current_process->DUE_TIME < elected->DUE_TIME) {
-		  elected = current_process;
-	  }
-	  current_process->DUE_TIME--;
-	  
-	  if ( current_process->  DUE_TIME <= -1 )
-	  {
-		current_process->TERMINATED = 1;
-	  }
-	  
-	  current_process=current_process->next_process;
-	
-  } while(current_process != temp);
-  
-  current_process=elected; 
-	  
+
+  // update DUE_TIME for each process
+  pcb_s* temp = kmain_process . next_process;  
+  do{		
+    temp->DUE_TIME--;
+    temp = temp->next_process;		
+  } while(temp != NULL);
+   
+  // elect a process
+  if(kmain_process.next_process == NULL){
+    current_process = &kmain_process;
+    last_process = &kmain_process;
+
+  }else{ 
+    current_process = kmain_process.next_process; // because it is the lowest DUE_TIME
+  }
 }
 
-void  elect_sched_edf()
+void  elect_sched_edf_2()
 {
 	delete_timed_out_processes();
 	
@@ -220,6 +233,10 @@ void elect(){
 	case sched_edf :
 		elect_sched_edf();
 		break;
+	}
+
+	if(current_process == &kmain_process ){
+		terminate_kernel();
 	}
 }
 
@@ -308,7 +325,11 @@ void sys_yieldto(pcb_s* dest)
 
 
 void start_current_process(){
-  //( (func_t*) (current_process -> lr_usr) )() ;
+
+  //__asm("mov r5, %0" : :"r"(start_current_process+44) : "r5");   
+  __asm("mov %0, lr" : "=r"(kmain_process . lr_svc) ); 
+  
+
   __asm("mov r4, %0" : :"r"(current_process -> lr_usr) : "r4");  
   __asm("bx r4");
   sys_exit(0);
