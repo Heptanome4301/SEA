@@ -17,7 +17,6 @@ pcb_s* last_process;
 void sched_init();
 void create_process(func_t* entry,int priority);
 
-void create_priority_process(func_t* entry, int priority);
 
 
 void elect();
@@ -39,6 +38,8 @@ void sys_exit(int status);
 void do_sys_exit();
 
 void del_terminated_process (pcb_s* previous_process) ;
+
+void delete_timed_out_processes();
 
 
 /* Cette partie n'est pas encore à l'ordre du jour

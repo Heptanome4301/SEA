@@ -16,6 +16,7 @@ typedef struct pcb_st{
 	int TERMINATED ;
     int EXIT_CODE;
 	unsigned char PRIORITY;
+	int DUE_TIME;
 } pcb_s;
 
 void sys_reboot();

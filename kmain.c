@@ -52,33 +52,26 @@ void user_process1()
 
 void kmain(void){
 
-	/*sched_init();
-	
+	sched_init();
+	 
+	//current_process-> lr_svc = (int)(func_t*)&kmain;
 	//int i;
 	//for(i=0;i<NB_PROCESS;i++){
-	create_process((func_t*) &user_process1,2);
-	create_process((func_t*) &user_process2,0);
-	create_process((func_t*) &user_process3,12);
-	create_process((func_t*) &user_process4,10);
+	create_process((func_t*) &user_process1,0);
+	create_process((func_t*) &user_process2,2);
+	create_process((func_t*) &user_process3,3);
+	create_process((func_t*) &user_process4,4);
 		//}
  
 	timer_init();
 	ENABLE_IRQ();
 
+	// MODE USER
+	__asm("cps 0x10");
+	start_current_process();
 	
-	start_current_process();*/
-
-  __asm("cps 0x13");
-
-  //kheap_init();
-  vmem_init();
-  uint32_t petit_nom = vmem_translate(0x48000, NULL);
-  uint32_t grand_nom = vmem_translate(0x1500000, NULL);
-  petit_nom++;
-  grand_nom++;
-
-  __asm("cps 0x10");
-
+	//create_process((func_t*) &user_process1,1);
+	//start_current_process();
 
 }
 
