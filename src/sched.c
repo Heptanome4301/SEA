@@ -28,8 +28,12 @@ void sched_init(void)
 
 	current_process = &kmain_process;
 	last_process = &kmain_process;
+	
+	#if VMEM
+	vmem_init();
+	#else
 	kheap_init();
-
+	#endif
 }
 
 

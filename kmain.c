@@ -4,6 +4,7 @@
 #include "syscall.h"
 #include "sched.h"
 #include "vmem.h"
+#include "kheap.h"
 
 
 
@@ -67,6 +68,9 @@ void kmain(void){
 	
 	start_current_process();*/
 
+  __asm("cps 0x13");
+
+  //kheap_init();
   vmem_init();
   uint32_t petit_nom = vmem_translate(0x48000, NULL);
   uint32_t grand_nom = vmem_translate(0x1500000, NULL);

@@ -2,15 +2,18 @@
 #include "kheap.h"
 #include <stddef.h>
 
-uint32_t memory_flags = 0b000001110010; //see question 9.2
-uint32_t device_flags = 0b000000110110; //see question 9.3
+uint32_t memory_flags = 0b000001110010;
+					  //0b010001110011; //see question 9.2
+uint32_t device_flags = 0b000000111110;
+				   	  //0b010000110111; //see question 9.3
 uint32_t fl_flags = 0b0000000001; //see fig 9.5
 
 void 
 vmem_init()
 {
-	init_kern_translation_table();
-	configure_mmu_C();
+	kheap_init();
+	unsigned int table_base = init_kern_translation_table();
+	configure_mmu_C(table_base);
 	//__asm("cps 0b10111");//Activate data abort and interruptions : bit 7-8 of cpsr
 	//TODO Later
 	start_mmu_C();
@@ -19,21 +22,27 @@ vmem_init()
 void
 start_mmu_C()
 {
-register unsigned int control;
-__asm("mcr p15, 0, %[zero], c1, c0, 0" : : [zero] "r"(0)); //Disable cache
-__asm("mcr p15, 0, r0, c7, c7, 0"); //Invalidate cache (data and instructions) */
-__asm("mcr p15, 0, r0, c8, c7, 0"); //Invalidate TLB entries
-/* Enable ARMv6 MMU features (disable sub-page AP) */
-control = (1<<23) | (1 << 15) | (1 << 4) | 1;
-/* Invalidate the translation lookaside buffer (TLB) */
-__asm volatile("mcr p15, 0, %[data], c8, c7, 0" : : [data] "r" (0));
-/* Write control register */
-__asm volatile("mcr p15, 0, %[control], c1, c0, 0" : : [control] "r" (control));
+	register unsigned int control;
+	__asm volatile("cpsie a"); //enable abort
+	__asm volatile("cpsie i"); //enable interruptions
+
+
+	__asm("mcr p15, 0, %[zero], c1, c0, 0" : : [zero] "r"(0)); //Disable cache
+	__asm("mcr p15, 0, r0, c7, c7, 0"); //Invalidate cache (data and instructions) */
+	__asm("mcr p15, 0, r0, c8, c7, 0"); //Invalidate TLB entries
+
+	/* Enable ARMv6 MMU features (disable sub-page AP) */
+	control = (1<<23) | (1 << 15) | (1 << 4) | 1;
+	/* Invalidate the translation lookaside buffer (TLB) */
+	__asm volatile("mcr p15, 0, %[data], c8, c7, 0" : : [data] "r" (0));
+	/* Write control register */
+	__asm volatile("mcr p15, 0, %[control], c1, c0, 0" : : [control] "r" (control));
 }
+
 void
-configure_mmu_C()
+configure_mmu_C(unsigned int table_base)
 {
-register unsigned int pt_addr = FIRST_LVL_TABLE_BASE;
+register unsigned int pt_addr = table_base;
 //total++; //why?
 /* Translation table 0 */
 __asm volatile("mcr p15, 0, %[addr], c2, c0, 0" : : [addr] "r" (pt_addr));
@@ -50,40 +59,50 @@ __asm volatile("mcr p15, 0, %[r], c3, c0, 0" : : [r] "r" (0x3));
 unsigned int
 init_kern_translation_table(void)
 {
-	int fl_index; //first level index
-	uint32_t * fl_page_entry = (uint32_t*)FIRST_LVL_TABLE_BASE; //first level
 
+	uint32_t table_base = (uint32_t) kAlloc_aligned(FIRST_LVL_TT_SIZE, 14); 
+	//14  = 12 bits for first level index + 2bits 0
+ 
+	int fl_index; //ST_table_base; //first level
+	
+	//for each pages of the first level
 	for(fl_index = 0 ; fl_index < FIRST_LVL_TT_COUN ; fl_index++)
 	{
+		//build the first level address
+		uint32_t fl_address = table_base | (fl_index << 2);
+
+		//Allocate space for the second level table
+		uint32_t fl_entry = (uint32_t) kAlloc_aligned(SECON_LVL_TT_SIZE, 10);
+		// 10 = 8 bits for adress, 2bits 01
+
+		//Build the first level translation table
+		*(uint32_t*)fl_address = fl_entry | fl_flags;
+
 		int sl_index; //second level index
-		uint32_t* sl_page_entry= (uint32_t*)(SECON_LVL_TABLE_BASE + fl_index* SECON_LVL_TT_SIZE);
 
 		for(sl_index = 0 ; sl_index < SECON_LVL_TT_COUN ; sl_index++)
 		{
+			//Address in the second level table
+			uint32_t sl_address = fl_entry | (sl_index << 2);
+
 			uint32_t page_addr = ((fl_index<<8) + sl_index) <<12; //build the 20 first bits of virtual address
 
-			if(page_addr < FIRST_LVL_TABLE_BASE && page_addr > 0)
+			if(page_addr < table_base && page_addr > 0)
 			{
-				*sl_page_entry = page_addr | memory_flags;
+				*(uint32_t*) sl_address = page_addr | memory_flags;
 			} 
 			else if(page_addr > IO_DEVICES_RAM_START && page_addr < IO_DEVICES_RAM_END)
 			{
-				*sl_page_entry = page_addr | device_flags;
+				*(uint32_t*) sl_address = page_addr | device_flags;
 			} 
 			else
 			{
-				*sl_page_entry = 0 ; // translation fault
+				*(uint32_t*) sl_address = 0 ; // translation fault
 			}
-
-			sl_page_entry++;
 		}
-		uint32_t addr = SECON_LVL_TABLE_BASE + fl_index* SECON_LVL_TT_SIZE; //see fig 9.4
-		*fl_page_entry = (uint32_t)((addr) | fl_flags);
-
-		fl_page_entry++;
 	}
 
- 	return 0;
+ 	return table_base;
 }
 
 uint32_t
