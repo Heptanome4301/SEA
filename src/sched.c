@@ -9,6 +9,7 @@
 #define SCHEDULER 1
 
 
+unsigned int pid_counter = 0; 
 pcb_s kmain_process;
 
 enum sched_type {
@@ -99,7 +100,7 @@ void init_sched_edf(pcb_s* res,int param){
 	//last_process = res;
 	
 	insert_new_process(res);
-	current_process = kmain_process . next_process;
+	//current_process = kmain_process . next_process;
 	
 }
 
@@ -125,7 +126,7 @@ void define_sched(pcb_s* res,int param)
 
 
 
-void create_process(func_t* entry,int param)
+unsigned int create_process(func_t* entry,int param)
 {
 	
 	pcb_s* res = (pcb_s*)kAlloc(sizeof(pcb_s));
@@ -133,12 +134,14 @@ void create_process(func_t* entry,int param)
 	res -> lr_usr = (int)entry;
 	res -> lr_svc = (int)entry;
 	res ->  CPSR_user = 0x10; // mode user
+	res ->  PID = ++pid_counter;
 	
 	int*sp = (int*)kAlloc(STACK_SIZE); // 10Ko
 	res -> sp = (int*)(((int)sp) +( STACK_SIZE/WORD_SIZE )) ;
 	res ->TERMINATED = 0;
 
 	define_sched(res,param);
+	return res -> PID;
 }
 
 
@@ -334,15 +337,13 @@ void start_current_process(){
  
   __asm("mov %0, lr" : "=r"(kmain_process . lr_svc) ); 
   
+  elect();
 
-  __asm("mov r4, %0" : :"r"(current_process -> lr_usr) : "r4");  
+  __asm("mov r4, %0" : :"r"(current_process -> lr_usr) : "r4");  //ecriture
   __asm("bx r4");
   sys_exit(0);
 
 }
-
-
-
 
 void do_sys_yield(void)
 {
@@ -499,7 +500,6 @@ void do_sys_yield_irq(void)
 }
 
 
-
 void sys_exit(int status)
 {
 	__asm("mov r0, %0" : :"r"(EXIT) : "r0");    // ecriture registre
@@ -512,6 +512,21 @@ void do_sys_exit()
 {  
 	current_process ->TERMINATED = 1;
 	__asm("mov %0, r1" : "=r"(current_process -> EXIT_CODE )); 
+}
+
+
+pcb_s* get_pcb_process(unsigned int pid){
+	
+  pcb_s* tmp = &kmain_process;
+  while(tmp->next_process != NULL && 
+	tmp->next_process != &kmain_process )
+    {
+		if(tmp->PID == pid) break;
+		tmp = tmp->next_process;
+    }
+	if( (tmp == NULL) || (tmp == &kmain_process)) 
+		return NULL; 
+	return tmp;
 }
 
 

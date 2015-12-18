@@ -12,6 +12,7 @@
 #define SYS_TIME_GT 4
 #define YIELDTO 5
 #define YIELD 6
+#define SYS_FORK 8
 
 
 
@@ -65,6 +66,10 @@ void __attribute__((naked)) swi_handler(void)
 			
 		case EXIT:
 			do_sys_exit();
+			break;
+			
+		case SYS_FORK : 
+			do_sys_fork();
 			break;
 			
 		/*
@@ -181,7 +186,7 @@ void do_sys_gettime()
 
 int led_allumee = 0;
 
-void __attribute__((naked))irq_handler(void)
+void __attribute__((naked))irq_handler2(void)
 {
 
 	int tmp ;
@@ -202,7 +207,7 @@ void __attribute__((naked))irq_handler(void)
 }
 
 
-void __attribute__((naked)) irq_handler2(void)
+void __attribute__((naked)) irq_handler(void)
 {
 
   //sauvegarde du context
@@ -233,6 +238,39 @@ void rearmer(void)
   ENABLE_IRQ();
  
 }
+
+int fork(){
+		return  sys_fork();
+		
+}
+
+
+int sys_fork(){
+	__asm("mov r0, %0" : :"r"(SYS_FORK) : "r0");    // ecriture registre	
+	__asm("SWI #0");
+	
+	int tmp;
+	__asm("mov %0, sp" : "=r"(tmp) );           // lecture registre  
+	//__asm("mov sp,#4");
+	return tmp;
+	
+}
+
+void do_sys_fork(){
+	unsigned int pid = create_process((int(*)(void))current_process->lr_usr,current_process->DUE_TIME);
+	pcb_s* new_process = get_pcb_process(pid);
+	new_process -> lr_svc = current_process -> lr_svc;
+	
+	(new_process-> sp)--;
+	*(new_process-> sp) = 0;
+	(current_process-> sp)--;
+	*(current_process-> sp) = pid;
+}
+
+
+
+
+
 
 
 

@@ -15,7 +15,7 @@ pcb_s* last_process;
 
 
 void sched_init();
-void create_process(func_t* entry,int priority);
+unsigned int create_process(func_t* entry,int priority);
 
 
 
@@ -41,6 +41,7 @@ void del_terminated_process (pcb_s* previous_process) ;
 
 void delete_timed_out_processes();
 
+pcb_s* get_pcb_process(unsigned int pid);
 
 /* Cette partie n'est pas encore à l'ordre du jour
 void sys_set_scheduler();

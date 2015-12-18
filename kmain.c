@@ -89,21 +89,35 @@ void pause(int mlsced){
 	
 }
 
+
+
 //extern int led_allumee ;
 
+void user_process_fork(){
+	int i;
+	for(i=0;i<3;i++);
+	fork();
+	for(i=3;;i--);
+	
+}
+
 void kmain(void){
+	sched_init();
 
-  timer_init();
-  ENABLE_IRQ();
-  
- __asm("cps 0x10");
+	create_process((func_t*) &user_process_fork,8);
 
-//	sys_yieldto(p1);*/
-  
-  while(1) {
-  }
 
-  PANIC();  
+	timer_init();
+	ENABLE_IRQ();
+
+	// MODE USER
+	__asm("cps 0x10");
+	start_current_process();
+
+
+
+
+	PANIC();  
 
 }
 

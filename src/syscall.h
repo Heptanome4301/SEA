@@ -17,6 +17,7 @@ typedef struct pcb_st{
     int EXIT_CODE;
 	unsigned char PRIORITY;
 	int DUE_TIME;
+	unsigned int PID;
 } pcb_s;
 
 void sys_reboot();
@@ -39,6 +40,8 @@ void irq_handler(void);
 
 void rearmer(void);
 
-
+int fork();
+int sys_fork();
+void do_sys_fork();
 
 #endif
