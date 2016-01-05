@@ -11,6 +11,7 @@ typedef struct pcb_st{
 	int r9;int r10;int r11;int r12;
 	int lr_svc;int lr_usr;
 	int*sp; 
+	uint32_t** page_table;
 	int CPSR_user;
 	struct pcb_st* next_process;
 	int TERMINATED ;

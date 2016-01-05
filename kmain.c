@@ -7,90 +7,22 @@
 #include "kheap.h"
 
 
-
-#define NB_PROCESS 4
-
-void user_process4()
+void kmain(void)
 {
-  int n = -1;
-  while(1){
-    n--;
-    // sys_yield();
-  }
-}
-
-void user_process3()
-{
-  int n = -1;
-  while(1){
-    n--;
-    // sys_yield();
-  }
-}
-
-void user_process2()
-{
-  int n = -1;
-  while(1){
-    n--;
-    // sys_yield();
-  }
-}
+	// supervisor mode
+	__asm("cps 0x13");
+	vmem_init();
+  uint32_t trans0 = vmem_translate(0x48000, NULL);
+	uint32_t v1 = (uint32_t) vmem_alloc_for_userland(NULL);
+  uint32_t v2 = (uint32_t) vmem_alloc_for_userland(NULL);
+  uint32_t trans1 = vmem_translate(v1, NULL);
+  uint32_t trans2 = vmem_translate(v2, NULL);
 
 
-void user_process1()
-{
-	int v = 0; 
-	while(1){
-		v++;
-		//	sys_yield();
-	}
-	//sys_exit(0);
-}
-
-
-
-void kmain(void){
-
-	sched_init();
-	 
-	//current_process-> lr_svc = (int)(func_t*)&kmain;
-	//int i;
-	//for(i=0;i<NB_PROCESS;i++){
-	create_process((func_t*) &user_process1,0);
-	create_process((func_t*) &user_process2,2);
-	create_process((func_t*) &user_process3,3);
-	create_process((func_t*) &user_process4,4);
-		//}
- 
-	timer_init();
-	ENABLE_IRQ();
-
-	// MODE USER
-	__asm("cps 0x10");
-	start_current_process();
-	
-	//create_process((func_t*) &user_process1,1);
-	//start_current_process();
-
-}
-
-
-
-
-
-void kmain_7_1(void){
-
-  timer_init();
-  ENABLE_IRQ();
-  
- __asm("cps 0x10");
-
-//	sys_yieldto(p1);*/
-  int i = 0 ;
-  while(1) i++;
-
-  PANIC();  
-
+	v1++;
+  v2++;
+	trans0++;
+  trans1++;
+  trans2++;
 }
 

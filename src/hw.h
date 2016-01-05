@@ -103,6 +103,7 @@
 #define PM_RSTC_WRCFG_FULL_RESET 0x00000020
 
 /*************** Functions declaration *****************/
+uint64_t divide(uint64_t x, uint64_t y);
 uint64_t get_date_ms();
 void set_date_ms(uint64_t date_ms);
 void set_next_tick(uint32_t time_ms);
