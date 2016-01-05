@@ -240,6 +240,8 @@ void rearmer(void)
 }
 
 int fork(){
+		__asm("mov %0, lr" : "=r"(current_process->lr_svc) );  // lecture registre
+		//__asm("mov %0, lr" : "=r"(fort) );  // lecture registre
 		return  sys_fork();
 		
 }
