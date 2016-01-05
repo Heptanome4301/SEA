@@ -250,6 +250,21 @@ vmem_alloc_for_userland(pcb_s* process, int nb_pages)
 }
 
 void 
+vmem_free(uint8_t* logical_address, pcb_s* process, unsigned int nb_pages)
+{
+	int page_counter;
+	uint32_t** table_base = get_table_base(process);
+	uint32_t frame;
+	for (page_counter = 0 ; page_counter < nb_pages ; page_counter += PAGE_SIZE)
+	{
+		uint32_t current_page = (uint32_t) logical_address + (page_counter * PAGE_SIZE);
+		frame = vmem_translate(current_page, process);
+		occupation_table[divide(frame, PAGE_SIZE)] = FRAME_FREE;
+		set_second_table_value(table_base, current_page, 0x3); //translation fault after that
+	}
+}
+
+void 
 set_second_table_value(uint32_t** table_base, uint32_t logical_address, uint32_t physical_address)
 {
 	//this function do the translation to complete the translation table 
