@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "hw.h"
 #include "sched.h"
+#include "kheap.h"
 
 
 #define REBOOT_INT 1
@@ -12,6 +13,7 @@
 #define SYS_TIME_GT 4
 #define YIELDTO 5
 #define YIELD 6
+#define SYS_FORK 8
 
 
 
@@ -65,6 +67,10 @@ void __attribute__((naked)) swi_handler(void)
 			
 		case EXIT:
 			do_sys_exit();
+			break;
+			
+		case SYS_FORK : 
+			do_sys_fork();
 			break;
 			
 		/*
@@ -179,6 +185,27 @@ void do_sys_gettime()
 
 }
 
+int led_allumee = 0;
+
+void __attribute__((naked))irq_handler2(void)
+{
+
+	int tmp ;
+	
+	__asm("mov %0, lr" : "=r"(tmp) );           // lecture registre  
+	  tmp -= 4; 
+ 
+	
+	if(led_allumee) led_off();
+	else led_on();
+	led_allumee = !led_allumee ;
+	
+	rearmer();
+	
+	__asm("mov lr, %0" : :"r"(tmp) : "lr");    // ecriture registre 
+	__asm("mov pc,lr");
+
+}
 
 
 void __attribute__((naked)) irq_handler(void)
@@ -212,6 +239,100 @@ void rearmer(void)
   ENABLE_IRQ();
  
 }
+
+int fork(){
+		__asm("mov %0, lr" : "=r"(current_process->lr_svc) );  // lecture registre
+		//__asm("mov %0, lr" : "=r"(fort) );  // lecture registre
+		return  sys_fork();
+		
+}
+
+
+int sys_fork(){
+	__asm("mov r0, %0" : :"r"(SYS_FORK) : "r0");    // ecriture registre	
+	__asm("SWI #0");
+	
+	int tmp;
+	__asm("mov %0, sp" : "=r"(tmp) );           // lecture registre  
+	//__asm("mov sp,#4");
+	return tmp;
+	
+}
+
+void do_sys_fork(){
+	unsigned int pid = create_process((int(*)(void))current_process->lr_usr,current_process->DUE_TIME);
+	pcb_s* new_process = get_pcb_process(pid);
+	new_process -> lr_svc = current_process -> lr_svc;
+	
+	(new_process-> sp)--;
+	*(new_process-> sp) = 0;
+	(current_process-> sp)--;
+	*(current_process-> sp) = pid;
+}
+
+
+
+void sem_init(sem_s* sem, unsigned int val)
+{
+	sem->watcher.next = NULL;
+	sem->counter = val;
+
+}
+
+
+void sem_up(sem_s* sem)
+{	
+	sem->counter++;
+	
+	//supprimer le current process de waiting_process_sem
+	waiting_process_sem* tmp = &sem->watcher;
+	while(tmp->next !=NULL){
+		if(tmp->next->current == current_process)
+		{
+			//suppression de current_process
+			waiting_process_sem*  tmp2 =  tmp->next;
+			tmp->next = tmp->next->next;
+			kFree((void*)tmp2,((unsigned int)sizeof(waiting_process_sem)));
+			break;
+		}
+		tmp = tmp->next;
+	}
+	
+	//débloquer une eventuel process blocké dans waiting_process_sem
+	tmp = &sem->watcher;
+	while(tmp->next !=NULL){
+		if(tmp->next->current->blocked )
+		{
+			tmp->next->current->blocked = 0;
+			break;
+		}
+		tmp = tmp->next;
+	}
+	
+}
+
+void sem_down(sem_s* sem)
+{
+	waiting_process_sem* new = (waiting_process_sem*)kAlloc(sizeof(waiting_process_sem)); 
+	new->current = current_process;
+	new->next = NULL;
+	
+	waiting_process_sem* tmp = &sem->watcher;
+	while(tmp->next !=NULL){ // trouver la queue de waiting_process_sem
+		tmp = tmp->next;
+	}
+	tmp->next = new;
+	
+	sem->counter--;
+	if(sem->counter<=0){
+		current_process -> blocked = 1;
+		
+	}
+	
+}
+
+
+
 
 
 

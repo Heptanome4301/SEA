@@ -6,9 +6,10 @@
 #define STACK_SIZE 10000
 #define WORD_SIZE 4
 
-#define SCHEDULER 1
+#define SCHEDULER 0 //sched_round_robin
 
 
+unsigned int pid_counter = 0; 
 pcb_s kmain_process;
 
 enum sched_type {
@@ -22,7 +23,9 @@ enum sched_type {
 
 void sched_init(void)
 {
-        __asm("mrs %0, CPSR" : "=r" (kmain_process. CPSR_user) );
+    __asm("mrs %0, CPSR" : "=r" (kmain_process. CPSR_user) );
+    __asm("mov %0, SP" : "=r" (kmain_process. sp) );
+        
 	current_process = &kmain_process;
 	//kamin_process->next_process = &kmain_process;
 	
@@ -97,7 +100,7 @@ void init_sched_edf(pcb_s* res,int param){
 	//last_process = res;
 	
 	insert_new_process(res);
-	current_process = kmain_process . next_process;
+	//current_process = kmain_process . next_process;
 	
 }
 
@@ -107,7 +110,7 @@ void define_sched(pcb_s* res,int param)
 {
 	switch(SCHEDULER){
 	
-	case sched_round_robin :
+	case sched_round_robin : 
 		init_sched_round_robin(res);
 		break;
 		
@@ -123,7 +126,7 @@ void define_sched(pcb_s* res,int param)
 
 
 
-void create_process(func_t* entry,int param)
+unsigned int create_process(func_t* entry,int param)
 {
 	
 	pcb_s* res = (pcb_s*)kAlloc(sizeof(pcb_s));
@@ -131,21 +134,31 @@ void create_process(func_t* entry,int param)
 	res -> lr_usr = (int)entry;
 	res -> lr_svc = (int)entry;
 	res ->  CPSR_user = 0x10; // mode user
+	res ->  PID = ++pid_counter;
 	
 	int*sp = (int*)kAlloc(STACK_SIZE); // 10Ko
 	res -> sp = (int*)(((int)sp) +( STACK_SIZE/WORD_SIZE )) ;
 	res ->TERMINATED = 0;
+	res->blocked = 0;
 
 	define_sched(res,param);
+	return res -> PID;
 }
 
 
 void elect_sched_round_robin()
 {
     
-  if( current_process->next_process != NULL )
-    current_process = current_process->next_process;
+	if( current_process->next_process != NULL )
+		current_process = current_process->next_process;
 	
+	while(current_process!=NULL && current_process->blocked){
+		current_process = current_process->next_process; 
+	}
+	
+	if(current_process==NULL ){
+		current_process = &kmain_process;
+	}
 }
 
 void elect_sched_edf()
@@ -160,12 +173,20 @@ void elect_sched_edf()
   } while(temp != NULL);
    
   // elect a process
-  if(kmain_process.next_process == NULL){
+  if(kmain_process.next_process == NULL){ //pas de process 
     current_process = &kmain_process;
     last_process = &kmain_process;
 
   }else{ 
     current_process = kmain_process.next_process; // because it is the lowest DUE_TIME
+    while(current_process->blocked){
+		current_process = current_process->next_process; 
+	}
+	 if(current_process== NULL){ //tous bloqués
+		current_process = &kmain_process;
+	}
+	
+	
   }
 }
 
@@ -226,11 +247,11 @@ void elect(){
 
 
 	switch(SCHEDULER) {
-	case sched_round_robin :
+	case sched_round_robin : // TODO prise en compte des process bloqué
 		elect_round_robin();
 		break;
 		
-	case sched_priority :
+	case sched_priority : // TODO prise en compte des process bloqué
 		elect_priority();
 		break;
 	
@@ -242,6 +263,8 @@ void elect(){
 	if(current_process == &kmain_process ){
 		terminate_kernel();
 	}
+	
+	
 }
 
 
@@ -329,19 +352,16 @@ void sys_yieldto(pcb_s* dest)
 
 
 void start_current_process(){
-
-  //__asm("mov r5, %0" : :"r"(start_current_process+44) : "r5");   
+ 
   __asm("mov %0, lr" : "=r"(kmain_process . lr_svc) ); 
   
+  elect();
 
-  __asm("mov r4, %0" : :"r"(current_process -> lr_usr) : "r4");  
+  __asm("mov r4, %0" : :"r"(current_process -> lr_usr) : "r4");  //ecriture
   __asm("bx r4");
   sys_exit(0);
 
 }
-
-
-
 
 void do_sys_yield(void)
 {
@@ -498,7 +518,6 @@ void do_sys_yield_irq(void)
 }
 
 
-
 void sys_exit(int status)
 {
 	__asm("mov r0, %0" : :"r"(EXIT) : "r0");    // ecriture registre
@@ -511,6 +530,21 @@ void do_sys_exit()
 {  
 	current_process ->TERMINATED = 1;
 	__asm("mov %0, r1" : "=r"(current_process -> EXIT_CODE )); 
+}
+
+
+pcb_s* get_pcb_process(unsigned int pid){
+	
+  pcb_s* tmp = &kmain_process;
+  while(tmp->next_process != NULL && 
+	tmp->next_process != &kmain_process )
+    {
+		if(tmp->PID == pid) break;
+		tmp = tmp->next_process;
+    }
+	if( (tmp == NULL) || (tmp == &kmain_process)) 
+		return NULL; 
+	return tmp;
 }
 
 
