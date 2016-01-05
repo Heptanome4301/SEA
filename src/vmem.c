@@ -197,38 +197,55 @@ init_occupation_table()
 }
 
 uint8_t*
-vmem_alloc_for_userland(pcb_s* process)
+vmem_alloc_for_userland(pcb_s* process, int nb_pages)
 {
 	uint32_t** table_base = get_table_base(process);
 
 	uint32_t logical_address;
 	uint32_t physical_address;
+	uint32_t first_page;
+	int successive_empty_pages = 0;
 
-	for (logical_address = kernel_heap_end + 1; logical_address < IO_DEVICES_RAM_START -1; logical_address += (1 << 12) )
-		//iterate over each logical address
-		//first address of each page
+	for (logical_address = kernel_heap_end + 1; logical_address < IO_DEVICES_RAM_START -1; logical_address += PAGE_SIZE)
 	{
 		physical_address = vmem_translate(logical_address, process);
 
 		if(physical_address == (uint32_t) FORBIDDEN_ADDRESS)
-			break;
-	}
-
-	int i;
-	uint32_t free_frame_address = NULL;
-
-	for(i = 0; i < FRAME_TABLE_SIZE; i++)
-	{
-		if(occupation_table[i] == FRAME_FREE)
 		{
-			occupation_table[i] = FRAME_OCCUPIED;
-			free_frame_address = i*4096;
-			break;
+			successive_empty_pages ++;
+		} 
+		else
+		{
+			successive_empty_pages = 0;
 		}
+		if(successive_empty_pages == nb_pages)
+		{
+			first_page = logical_address - (nb_pages-1)*PAGE_SIZE;
+			break;
+		}	
 	}
-	set_second_table_value(table_base, logical_address, free_frame_address);
 
-	return (uint8_t*) logical_address;
+	int frame_number;
+	int i = 0;
+	uint32_t current_logical_address;
+	uint32_t free_frame_address = NULL;
+	for (frame_number = 0 ; frame_number < nb_pages ; frame_number ++)
+	{ 
+		for(i = 0; i < FRAME_TABLE_SIZE; i++)
+		{
+			if(occupation_table[i] == FRAME_FREE)
+			{
+				occupation_table[i] = FRAME_OCCUPIED;
+				free_frame_address = i*4096;
+				break;
+			}
+		}
+		current_logical_address = first_page + frame_number * PAGE_SIZE;
+		set_second_table_value(table_base, current_logical_address, free_frame_address);
+	}
+
+
+	return (uint8_t*) first_page;
 
 }
 
