@@ -18,7 +18,25 @@ typedef struct pcb_st{
 	unsigned char PRIORITY;
 	int DUE_TIME;
 	unsigned int PID;
+	int blocked ;
 } pcb_s;
+
+
+typedef struct st_waiting_process_sem {
+	pcb_s* current;
+	struct st_waiting_process_sem* next;
+}waiting_process_sem;
+
+typedef struct {
+	waiting_process_sem watcher;
+	int counter;
+}sem_s;
+
+
+void sem_init(sem_s* sem, unsigned int val);
+void sem_up(sem_s* sem);
+void sem_down(sem_s* sem);
+
 
 void sys_reboot();
 

@@ -101,7 +101,7 @@ void user_process_fork(){
 	
 }
 
-void kmain(void){
+void kmain_fork(void){
 	sched_init();
 
 	create_process((func_t*) &user_process_fork,8);
@@ -121,7 +121,49 @@ void kmain(void){
 
 }
 
+sem_s* sem;
 
+void users_process1()
+{
+	sem_init(sem, 1);
+	sem_down(sem);
+
+	int i = 1000000000;
+	while(i>0){i--;};
+	
+	sem_up(sem);
+}
+
+
+void users_process2()
+{
+  sem_down(sem);
+  while(1);
+  sem_up(sem);
+}
+
+
+
+
+void kmain_sem(void){ // attention faut mettre sched_roud_robin
+	sched_init();
+
+	create_process((func_t*) &users_process1,0);
+	create_process((func_t*) &users_process2,0);
+
+	timer_init();
+	ENABLE_IRQ();
+
+	// MODE USER
+	__asm("cps 0x10");
+	start_current_process();
+
+
+
+
+	PANIC();  
+
+}
 
 
 

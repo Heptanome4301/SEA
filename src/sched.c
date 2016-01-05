@@ -6,7 +6,7 @@
 #define STACK_SIZE 10000
 #define WORD_SIZE 4
 
-#define SCHEDULER 1
+#define SCHEDULER 0 //sched_round_robin
 
 
 unsigned int pid_counter = 0; 
@@ -110,7 +110,7 @@ void define_sched(pcb_s* res,int param)
 {
 	switch(SCHEDULER){
 	
-	case sched_round_robin :
+	case sched_round_robin : 
 		init_sched_round_robin(res);
 		break;
 		
@@ -139,6 +139,7 @@ unsigned int create_process(func_t* entry,int param)
 	int*sp = (int*)kAlloc(STACK_SIZE); // 10Ko
 	res -> sp = (int*)(((int)sp) +( STACK_SIZE/WORD_SIZE )) ;
 	res ->TERMINATED = 0;
+	res->blocked = 0;
 
 	define_sched(res,param);
 	return res -> PID;
@@ -148,9 +149,16 @@ unsigned int create_process(func_t* entry,int param)
 void elect_sched_round_robin()
 {
     
-  if( current_process->next_process != NULL )
-    current_process = current_process->next_process;
+	if( current_process->next_process != NULL )
+		current_process = current_process->next_process;
 	
+	while(current_process!=NULL && current_process->blocked){
+		current_process = current_process->next_process; 
+	}
+	
+	if(current_process==NULL ){
+		current_process = &kmain_process;
+	}
 }
 
 void elect_sched_edf()
@@ -165,12 +173,20 @@ void elect_sched_edf()
   } while(temp != NULL);
    
   // elect a process
-  if(kmain_process.next_process == NULL){
+  if(kmain_process.next_process == NULL){ //pas de process 
     current_process = &kmain_process;
     last_process = &kmain_process;
 
   }else{ 
     current_process = kmain_process.next_process; // because it is the lowest DUE_TIME
+    while(current_process->blocked){
+		current_process = current_process->next_process; 
+	}
+	 if(current_process== NULL){ //tous bloqués
+		current_process = &kmain_process;
+	}
+	
+	
   }
 }
 
@@ -231,11 +247,11 @@ void elect(){
 
 
 	switch(SCHEDULER) {
-	case sched_round_robin :
+	case sched_round_robin : // TODO prise en compte des process bloqué
 		elect_round_robin();
 		break;
 		
-	case sched_priority :
+	case sched_priority : // TODO prise en compte des process bloqué
 		elect_priority();
 		break;
 	
@@ -247,6 +263,8 @@ void elect(){
 	if(current_process == &kmain_process ){
 		terminate_kernel();
 	}
+	
+	
 }
 
 

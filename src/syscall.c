@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "hw.h"
 #include "sched.h"
+#include "kheap.h"
 
 
 #define REBOOT_INT 1
@@ -270,6 +271,65 @@ void do_sys_fork(){
 }
 
 
+
+void sem_init(sem_s* sem, unsigned int val)
+{
+	sem->watcher.next = NULL;
+	sem->counter = val;
+
+}
+
+
+void sem_up(sem_s* sem)
+{	
+	sem->counter++;
+	
+	//supprimer le current process de waiting_process_sem
+	waiting_process_sem* tmp = &sem->watcher;
+	while(tmp->next !=NULL){
+		if(tmp->next->current == current_process)
+		{
+			//suppression de current_process
+			waiting_process_sem*  tmp2 =  tmp->next;
+			tmp->next = tmp->next->next;
+			kFree((void*)tmp2,((unsigned int)sizeof(waiting_process_sem)));
+			break;
+		}
+		tmp = tmp->next;
+	}
+	
+	//débloquer une eventuel process blocké dans waiting_process_sem
+	tmp = &sem->watcher;
+	while(tmp->next !=NULL){
+		if(tmp->next->current->blocked )
+		{
+			tmp->next->current->blocked = 0;
+			break;
+		}
+		tmp = tmp->next;
+	}
+	
+}
+
+void sem_down(sem_s* sem)
+{
+	waiting_process_sem* new = (waiting_process_sem*)kAlloc(sizeof(waiting_process_sem)); 
+	new->current = current_process;
+	new->next = NULL;
+	
+	waiting_process_sem* tmp = &sem->watcher;
+	while(tmp->next !=NULL){ // trouver la queue de waiting_process_sem
+		tmp = tmp->next;
+	}
+	tmp->next = new;
+	
+	sem->counter--;
+	if(sem->counter<=0){
+		current_process -> blocked = 1;
+		
+	}
+	
+}
 
 
 
