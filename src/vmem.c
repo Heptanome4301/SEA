@@ -7,10 +7,8 @@
 
 static const uint32_t kernel_heap_end = (uint32_t) &__kernel_heap_end__ ;
 
-uint32_t memory_flags = 0b000001110010;
-					  //0b010001110011; //see question 9.2
-uint32_t device_flags = 0b000000111110;
-				   	  //0b010000110111; //see question 9.3
+uint32_t memory_flags = 0b000001110010; //see question 9.2
+uint32_t device_flags = 0b000000111110; //see question 9.3
 uint32_t fl_flags = 0b0000000001; //see fig 9.5
 
 uint8_t* occupation_table;
@@ -33,7 +31,6 @@ start_mmu_C()
 	register unsigned int control;
 	__asm volatile("cpsie a"); //enable abort
 	__asm volatile("cpsie i"); //enable interruptions
-
 
 	__asm("mcr p15, 0, %[zero], c1, c0, 0" : : [zero] "r"(0)); //Disable cache
 	__asm("mcr p15, 0, r0, c7, c7, 0"); //Invalidate cache (data and instructions) */
@@ -132,6 +129,7 @@ vmem_translate(uint32_t logical_address, pcb_s* process)
 	uint32_t* first_level_descriptor_address;
 	uint32_t second_level_descriptor;
 	uint32_t* second_level_descriptor_address;
+
 	if (process == NULL)
 	{
 		__asm("mrc p15, 0, %[tb], c2, c0, 0" : [tb] "=r"(table_base));
@@ -245,10 +243,7 @@ vmem_alloc_for_userland(pcb_s* process, int nb_pages)
 		current_logical_address = first_page + frame_number * PAGE_SIZE;
 		set_second_table_value(table_base, current_logical_address, free_frame_address);
 	}
-
-
 	return (uint8_t*) first_page;
-
 }
 
 void 
@@ -341,6 +336,5 @@ uint32_t** get_table_base(pcb_s* process)
 	{
 		table_base = process->page_table;
 	}
-	
 	return table_base;
 }

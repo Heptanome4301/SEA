@@ -36,7 +36,6 @@ void sem_up(sem_s* sem);
 void sem_down(sem_s* sem);
 
 void sys_reboot();
-
 void do_sys_reboot();
 
 void sys_nop();
@@ -51,7 +50,7 @@ void do_sys_gettime();
 void swi_handler(void);
 void irq_handler(void);
 
-void rearmer(void);
+void rearm(void);
 
 int fork();
 int sys_fork();
@@ -60,6 +59,7 @@ void do_sys_fork();
 void sys_exit(int status);
 
 void* sys_mmap(unsigned int size);
+
 void sys_munmap(void* logical_address, unsigned int size);
 
 void sys_yieldto(pcb_s* dest);

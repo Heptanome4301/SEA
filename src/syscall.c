@@ -7,6 +7,8 @@
 #include "kheap.h"
 #include "vmem.h"
 
+int led_allumee = 0;
+
 enum SYSCALLS
 {
 	REBOOT,
@@ -21,18 +23,8 @@ enum SYSCALLS
 	MUNMAP,
 };
 
-
-void sys_reboot()
-{
-	__asm("mov r0, %0" : :"r"(REBOOT) : "r0");    // ecriture registre
-	__asm("SWI #0");
-	//__asm("bl swi_handler");
-
-
-}
-
-
-void __attribute__((naked)) swi_handler(void)
+void __attribute__((naked)) 
+swi_handler(void)
 {
 	//sauvegarde du context
 	__asm("stmfd sp!, {r0-r12,lr}");
@@ -53,7 +45,6 @@ void __attribute__((naked)) swi_handler(void)
 			break;
 
 		case SET_TIME :
-			
 			do_sys_settime();
 			break;
 		
@@ -68,15 +59,15 @@ void __attribute__((naked)) swi_handler(void)
 		case YIELD : 
 			do_sys_yield();
 			break;
+
+		case FORK : 
+			do_sys_fork();
+			break;
 			
 		case EXIT:
 			do_sys_exit();
 			break;
 			
-		case FORK : 
-			do_sys_fork();
-			break;
-
 		case MMAP : 
 			do_sys_mmap();
 			break;
@@ -101,8 +92,17 @@ void __attribute__((naked)) swi_handler(void)
 
 }
 
+/*Reboot the system*/
+void 
+sys_reboot()
+{
+	__asm("mov r0, %0" : :"r"(REBOOT) : "r0");    // ecriture registre
+	__asm("SWI #0");
+	//__asm("bl swi_handler");
+}
 
-void do_sys_reboot()
+void
+do_sys_reboot()
 {
 	__asm("mov pc, %0" : :"r"(0) ); 
 
@@ -113,39 +113,36 @@ void do_sys_reboot()
 
 	Set32(PM_WDOG, PM_PASSWORD | 1);
 	Set32(PM_RSTC, PM_PASSWORD | PM_RSTC_WRCFG_FULL_RESET);
-	while(1);*/
-
-	
+	while(1);*/	
 }
 
-
-void sys_nop()
+/* Does nothing, the return*/
+void 
+sys_nop()
 {
 	__asm("mov r0, %0" : :"r"(NOP) : "r0");    // ecriture registre
 	__asm("SWI #0");
 }
 
-void do_sys_nop()
+void 
+do_sys_nop()
 {
-
 	//__asm("msr SPSR_svc CPSR");	
 	//__asm("b LR_svc");
-	
 }
 
-
-void sys_settime(uint64_t date_ms)
+/*Set the timer to the given date*/
+void 
+sys_settime(uint64_t date_ms)
 {
-	
 	__asm("mov r0, %0" : :"r"(SET_TIME) : "r0");    // ecriture registre
 	__asm("mov r1, %0" : :"r"(date_ms) : "r1");    // ecriture registre
 	__asm("mov r2, %0" : :"r"(date_ms >> 32) : "r2");    // ecriture registre
 	__asm("SWI #0");
-
 }
 
-
-void do_sys_settime()
+void 
+do_sys_settime()
 {
 	uint64_t date_ms;
 	uint64_t a;
@@ -157,13 +154,12 @@ void do_sys_settime()
 	//date_ms = date_ms+1;
 
 	set_date_ms(date_ms);
-
 }
 
-
-uint64_t sys_gettime()
+/*Get the system time*/
+uint64_t 
+sys_gettime()
 {
-	
 	__asm("mov r0, %0" : :"r"(GET_TIME) : "r0");    // ecriture registre
 	__asm("SWI #0");
 
@@ -174,15 +170,13 @@ uint64_t sys_gettime()
 	__asm("mov %0, r0" : "=r"(faible) );  // lecture registre
 	__asm("mov %0, r1" : "=r"(fort) );  // lecture registre
 
-
 	date_ms = (faible & 0x00000000ffffffff) | (fort << 32) ;
 
 	return date_ms;
-
 }
 
-
-void do_sys_gettime()
+void 
+do_sys_gettime()
 {
 	uint64_t date_ms;
 
@@ -190,18 +184,61 @@ void do_sys_gettime()
 
 	*(int *)pile_context = (int)(date_ms & 0x00000000ffffffff) ; // faible
 	*(int *)(pile_context+sizeof(int)) = (int)((date_ms & 0xffffffff00000000) >> 32 ) ; // fort
-
 }
 
-void sys_exit(int status)
+/*Exit a processus*/
+void 
+sys_exit(int status)
 {
 	__asm("mov r0, %0" : :"r"(EXIT) : "r0");    // ecriture registre
 	__asm("mov r1, %0" : :"r"(status) : "r1");    // ecriture registre
 	__asm("SWI #0");
 }
 
+/*Step down for another processus*/
+void 
+sys_yieldto(pcb_s* dest)
+{
+	//int tmp;
+	__asm("mov r0, %0" : :"r"(YIELDTO) : "r0");    // ecriture registre
+	__asm("mov r1, %0" : :"r"(dest) : "r1");    // ecriture registre
+	//__asm("mov %0, lr" : "=r"(tmp) );           // lecture registre
+	//__asm("mov r2, %0" : :"r"(tmp) : "r2");    // ecriture registre
+	__asm("SWI #0");
+}
 
-void* sys_mmap(unsigned int size)
+int 
+fork(){
+		__asm("mov %0, lr" : "=r"(current_process->lr_svc) );  // lecture registre
+		//__asm("mov %0, lr" : "=r"(fort) );  // lecture registre
+		return  sys_fork();		
+}
+
+int 
+sys_fork(){
+	__asm("mov r0, %0" : :"r"(FORK) : "r0");    // ecriture registre	
+	__asm("SWI #0");
+	
+	int tmp;
+	__asm("mov %0, sp" : "=r"(tmp) );           // lecture registre  
+	//__asm("mov sp,#4");
+	return tmp;	
+}
+
+void 
+do_sys_fork(){
+	unsigned int pid = create_process((int(*)(void))current_process->lr_usr,current_process->DUE_TIME);
+	pcb_s* new_process = get_pcb_process(pid);
+	new_process -> lr_svc = current_process -> lr_svc;
+	
+	(new_process-> sp)--;
+	*(new_process-> sp) = 0;
+	(current_process-> sp)--;
+	*(current_process-> sp) = pid;
+}
+
+void* 
+sys_mmap(unsigned int size)
 {
 	__asm("mov r1, %0": : "r"(size));
 	__asm("mov r0, %0": : "r"(MMAP));
@@ -213,7 +250,8 @@ void* sys_mmap(unsigned int size)
 	return allocated_mem;
 }
 
-void sys_munmap(void* logical_address, unsigned int size)
+void 
+sys_munmap(void* logical_address, unsigned int size)
 {
 
 	__asm("mov r2, %0" : : "r"((uint32_t)(logical_address)));
@@ -222,46 +260,29 @@ void sys_munmap(void* logical_address, unsigned int size)
 	__asm("SWI #0");
 }
 
-void sys_yieldto(pcb_s* dest)
-{
-
-	//int tmp;
-
-	__asm("mov r0, %0" : :"r"(YIELDTO) : "r0");    // ecriture registre
-	__asm("mov r1, %0" : :"r"(dest) : "r1");    // ecriture registre
-	//__asm("mov %0, lr" : "=r"(tmp) );           // lecture registre
-	//__asm("mov r2, %0" : :"r"(tmp) : "r2");    // ecriture registre
-	__asm("SWI #0");
-
-}
-
-
-int led_allumee = 0;
-
-void __attribute__((naked))irq_handler2(void)
+void __attribute__((naked))
+irq_handler2(void)
 {
 
 	int tmp ;
 	
 	__asm("mov %0, lr" : "=r"(tmp) );           // lecture registre  
 	  tmp -= 4; 
- 
 	
 	if(led_allumee) led_off();
 	else led_on();
 	led_allumee = !led_allumee ;
 	
-	rearmer();
+	rearm();
 	
 	__asm("mov lr, %0" : :"r"(tmp) : "lr");    // ecriture registre 
 	__asm("mov pc,lr");
 
 }
 
-
-void __attribute__((naked)) irq_handler(void)
+void __attribute__((naked)) 
+irq_handler(void)
 {
-
   //sauvegarde du context
   __asm("stmfd sp!, {r0-r12,lr}");
   __asm("mov %0, sp" : "=r"(pile_context) );      
@@ -269,16 +290,14 @@ void __attribute__((naked)) irq_handler(void)
   *(((int*)pile_context)+13) -= 4;
  
   do_sys_yield_irq();
-  rearmer();
-  
+  rearm();
 
   //restauration du context
   __asm("ldmfd sp!, {r0-r12,pc}^");
-
 }
 
-
-void rearmer(void)
+void 
+rearm(void)
 {
   /* 10 ms seems good */
   set_next_tick_default();
@@ -288,50 +307,17 @@ void rearmer(void)
 
   DISABLE_IRQ();
   ENABLE_IRQ();
- 
 }
 
-int fork(){
-		__asm("mov %0, lr" : "=r"(current_process->lr_svc) );  // lecture registre
-		//__asm("mov %0, lr" : "=r"(fort) );  // lecture registre
-		return  sys_fork();
-		
-}
-
-
-int sys_fork(){
-	__asm("mov r0, %0" : :"r"(FORK) : "r0");    // ecriture registre	
-	__asm("SWI #0");
-	
-	int tmp;
-	__asm("mov %0, sp" : "=r"(tmp) );           // lecture registre  
-	//__asm("mov sp,#4");
-	return tmp;
-	
-}
-
-void do_sys_fork(){
-	unsigned int pid = create_process((int(*)(void))current_process->lr_usr,current_process->DUE_TIME);
-	pcb_s* new_process = get_pcb_process(pid);
-	new_process -> lr_svc = current_process -> lr_svc;
-	
-	(new_process-> sp)--;
-	*(new_process-> sp) = 0;
-	(current_process-> sp)--;
-	*(current_process-> sp) = pid;
-}
-
-
-
-void sem_init(sem_s* sem, unsigned int val)
+void 
+sem_init(sem_s* sem, unsigned int val)
 {
 	sem->watcher.next = NULL;
 	sem->counter = val;
-
 }
 
-
-void sem_up(sem_s* sem)
+void 
+sem_up(sem_s* sem)
 {	
 	sem->counter++;
 	
@@ -358,11 +344,11 @@ void sem_up(sem_s* sem)
 			break;
 		}
 		tmp = tmp->next;
-	}
-	
+	}	
 }
 
-void sem_down(sem_s* sem)
+void 
+sem_down(sem_s* sem)
 {
 	waiting_process_sem* new = (waiting_process_sem*)kAlloc(sizeof(waiting_process_sem)); 
 	new->current = current_process;
@@ -376,14 +362,6 @@ void sem_down(sem_s* sem)
 	
 	sem->counter--;
 	if(sem->counter<=0){
-		current_process -> blocked = 1;
-		
+		current_process -> blocked = 1;		
 	}
-	
 }
-
-
-
-
-
-

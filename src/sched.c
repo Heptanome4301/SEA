@@ -299,8 +299,6 @@ void del_terminated_process (pcb_s* previous_process) { // supprime le process q
 
 }
 
-
-
 void elect_priority() {
 
 	for (pcb_s *proc = current_process->next_process; proc != current_process; proc = proc->next_process){
@@ -321,10 +319,7 @@ void elect_priority() {
 	else
 		current_process = process_prioritaire; // On donne la main au processus qui a la plus grande priorité
 
-
 }
-
-
 
 void elect_round_robin(){
 	
@@ -334,9 +329,6 @@ void elect_round_robin(){
 		else
 			current_process = current_process->next_process; // On donne la main au processus suivant
 }
-
-
-
 
 void start_current_process(){
  
@@ -400,9 +392,6 @@ void do_sys_yield(void)
 	
 }
 
-
-
-
 void do_sys_yieldto(void)
 {
 	int i;
@@ -445,11 +434,8 @@ void do_sys_yieldto(void)
 	
 	__asm("mov r3, %0" : :"r"(current_process->CPSR_user) : "r3" );    	// ecriture registre
 	__asm("msr SPSR_s,r3"); // normalent SPSR  mais ca marche pas avec ... 
-	
-	
-	
+		
 }
-
 
 
 // pcb_s* current_process;
@@ -499,19 +485,14 @@ void do_sys_yield_irq(void)
 	__asm("cps 0b10010"); 				
 	
  
-	__asm("msr SPSR, %0" :: "r" (current_process->CPSR_user) ); 
-	
-		
+	__asm("msr SPSR, %0" :: "r" (current_process->CPSR_user) ); 	
 }
-
-
 
 void do_sys_exit()
 {  
 	current_process ->TERMINATED = 1;
 	__asm("mov %0, r1" : "=r"(current_process -> EXIT_CODE )); 
 }
-
 
 pcb_s* get_pcb_process(unsigned int pid){
 	
@@ -526,9 +507,6 @@ pcb_s* get_pcb_process(unsigned int pid){
 		return NULL; 
 	return tmp;
 }
-
-
-
 
 /* Cette partie n'est pas encore à l'ordre du jour
 
