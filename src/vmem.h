@@ -37,12 +37,16 @@ unsigned int init_kern_translation_table(void);
 void vmem_init();
 uint32_t vmem_translate(uint32_t va, pcb_s* process);
 uint8_t* init_occupation_table();
-uint8_t* vmem_alloc_for_userland(pcb_s* process, int nb_pages);
+void* vmem_alloc_for_userland(pcb_s* process, int nb_pages);
 uint32_t** get_table_base(pcb_s* process);
 void set_second_table_value(uint32_t** table_base, uint32_t logical_address, uint32_t physical_address);
 uint32_t get_first_level_descriptor (uint32_t** table_base, uint32_t virtual_address);
 uint32_t* get_second_lvl_descriptor_address(uint32_t first_level_descriptor, uint32_t logical_address);
-void vmem_free(uint8_t* logical_address, pcb_s* process, unsigned int nb_pages);
+void vmem_free(pcb_s* process, uint8_t* logical_address, unsigned int nb_pages);
+void free_second_lvl_table(uint32_t** table_base, uint32_t logical_address);
 
+void do_sys_mmap();
+
+void do_sys_munmap();
 
 #endif

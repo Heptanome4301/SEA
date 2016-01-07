@@ -5,22 +5,26 @@
 #include "hw.h"
 #include "sched.h"
 #include "kheap.h"
+#include "vmem.h"
 
-
-#define REBOOT_INT 1
-#define NOP_INT 2
-#define SYS_TIME 3
-#define SYS_TIME_GT 4
-#define YIELDTO 5
-#define YIELD 6
-#define SYS_FORK 8
-
-
+enum SYSCALLS
+{
+	REBOOT,
+	NOP,
+	SET_TIME,
+	GET_TIME,
+	YIELDTO,
+	YIELD,
+	FORK,
+	EXIT,
+	MMAP,
+	MUNMAP,
+};
 
 
 void sys_reboot()
 {
-	__asm("mov r0, %0" : :"r"(REBOOT_INT) : "r0");    // ecriture registre
+	__asm("mov r0, %0" : :"r"(REBOOT) : "r0");    // ecriture registre
 	__asm("SWI #0");
 	//__asm("bl swi_handler");
 
@@ -40,20 +44,20 @@ void __attribute__((naked)) swi_handler(void)
 
 	switch(num_intp)
 	{
-		case REBOOT_INT :
+		case REBOOT :
 			do_sys_reboot();			
 			break;
 
-		case NOP_INT :
+		case NOP :
 			do_sys_nop();
 			break;
 
-		case SYS_TIME :
+		case SET_TIME :
 			
 			do_sys_settime();
 			break;
 		
-		case SYS_TIME_GT :
+		case GET_TIME :
 			do_sys_gettime();
 			break;
 
@@ -69,8 +73,16 @@ void __attribute__((naked)) swi_handler(void)
 			do_sys_exit();
 			break;
 			
-		case SYS_FORK : 
+		case FORK : 
 			do_sys_fork();
+			break;
+
+		case MMAP : 
+			do_sys_mmap();
+			break;
+
+		case MUNMAP :
+			do_sys_munmap();
 			break;
 			
 		/*
@@ -109,12 +121,8 @@ void do_sys_reboot()
 
 void sys_nop()
 {
-
-	__asm("mov r0, %0" : :"r"(NOP_INT) : "r0");    // ecriture registre
+	__asm("mov r0, %0" : :"r"(NOP) : "r0");    // ecriture registre
 	__asm("SWI #0");
-
-	
-
 }
 
 void do_sys_nop()
@@ -129,7 +137,7 @@ void do_sys_nop()
 void sys_settime(uint64_t date_ms)
 {
 	
-	__asm("mov r0, %0" : :"r"(SYS_TIME) : "r0");    // ecriture registre
+	__asm("mov r0, %0" : :"r"(SET_TIME) : "r0");    // ecriture registre
 	__asm("mov r1, %0" : :"r"(date_ms) : "r1");    // ecriture registre
 	__asm("mov r2, %0" : :"r"(date_ms >> 32) : "r2");    // ecriture registre
 	__asm("SWI #0");
@@ -156,7 +164,7 @@ void do_sys_settime()
 uint64_t sys_gettime()
 {
 	
-	__asm("mov r0, %0" : :"r"(SYS_TIME_GT) : "r0");    // ecriture registre
+	__asm("mov r0, %0" : :"r"(GET_TIME) : "r0");    // ecriture registre
 	__asm("SWI #0");
 
 	uint64_t date_ms;
@@ -184,6 +192,49 @@ void do_sys_gettime()
 	*(int *)(pile_context+sizeof(int)) = (int)((date_ms & 0xffffffff00000000) >> 32 ) ; // fort
 
 }
+
+void sys_exit(int status)
+{
+	__asm("mov r0, %0" : :"r"(EXIT) : "r0");    // ecriture registre
+	__asm("mov r1, %0" : :"r"(status) : "r1");    // ecriture registre
+	__asm("SWI #0");
+}
+
+
+void* sys_mmap(unsigned int size)
+{
+	__asm("mov r1, %0": : "r"(size));
+	__asm("mov r0, %0": : "r"(MMAP));
+	__asm("SWI #0");
+	
+	void* allocated_mem;
+	__asm("mov %0, r0" : "=r"(allocated_mem));
+
+	return allocated_mem;
+}
+
+void sys_munmap(void* logical_address, unsigned int size)
+{
+
+	__asm("mov r2, %0" : : "r"((uint32_t)(logical_address)));
+	__asm("mov r1, %0": : "r"(size));
+	__asm("mov r0, %0": : "r"(MUNMAP));
+	__asm("SWI #0");
+}
+
+void sys_yieldto(pcb_s* dest)
+{
+
+	//int tmp;
+
+	__asm("mov r0, %0" : :"r"(YIELDTO) : "r0");    // ecriture registre
+	__asm("mov r1, %0" : :"r"(dest) : "r1");    // ecriture registre
+	//__asm("mov %0, lr" : "=r"(tmp) );           // lecture registre
+	//__asm("mov r2, %0" : :"r"(tmp) : "r2");    // ecriture registre
+	__asm("SWI #0");
+
+}
+
 
 int led_allumee = 0;
 
@@ -249,7 +300,7 @@ int fork(){
 
 
 int sys_fork(){
-	__asm("mov r0, %0" : :"r"(SYS_FORK) : "r0");    // ecriture registre	
+	__asm("mov r0, %0" : :"r"(FORK) : "r0");    // ecriture registre	
 	__asm("SWI #0");
 	
 	int tmp;

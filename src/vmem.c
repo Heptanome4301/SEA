@@ -2,6 +2,8 @@
 #include "kheap.h"
 #include "config.h"
 #include "hw.h"
+#include "syscall.h"
+#include "sched.h"
 
 static const uint32_t kernel_heap_end = (uint32_t) &__kernel_heap_end__ ;
 
@@ -196,7 +198,7 @@ init_occupation_table()
 	return occupation_table_start_address;
 }
 
-uint8_t*
+void*
 vmem_alloc_for_userland(pcb_s* process, int nb_pages)
 {
 	uint32_t** table_base = get_table_base(process);
@@ -250,18 +252,34 @@ vmem_alloc_for_userland(pcb_s* process, int nb_pages)
 }
 
 void 
-vmem_free(uint8_t* logical_address, pcb_s* process, unsigned int nb_pages)
+vmem_free(pcb_s* process, uint8_t* logical_address, unsigned int nb_pages)
 {
 	int page_counter;
 	uint32_t** table_base = get_table_base(process);
 	uint32_t frame;
-	for (page_counter = 0 ; page_counter < nb_pages ; page_counter += PAGE_SIZE)
+	for (page_counter = 0 ; page_counter < nb_pages ; page_counter++)
 	{
 		uint32_t current_page = (uint32_t) logical_address + (page_counter * PAGE_SIZE);
 		frame = vmem_translate(current_page, process);
 		occupation_table[divide(frame, PAGE_SIZE)] = FRAME_FREE;
-		set_second_table_value(table_base, current_page, 0x3); //translation fault after that
+		free_second_lvl_table(table_base, current_page); //translation fault after that
 	}
+}
+
+void 
+do_sys_mmap()
+{
+	uint32_t nb_pages = *((uint32_t*) pile_context + 1); //number of pages to allocate
+	uint32_t logical_address = (uint32_t) vmem_alloc_for_userland(current_process, nb_pages);
+	*((uint32_t*)pile_context) = logical_address;
+}
+
+void 
+do_sys_munmap()
+{
+	uint32_t nb_pages = *((uint32_t*) pile_context + 1); //number of pages to free
+	uint32_t logical_address = *((uint32_t*) pile_context + 2);
+	vmem_free(current_process, (uint8_t*)(logical_address), nb_pages);
 }
 
 void 
@@ -276,6 +294,19 @@ set_second_table_value(uint32_t** table_base, uint32_t logical_address, uint32_t
 	second_level_descriptor_address = get_second_lvl_descriptor_address(first_level_descriptor, logical_address);
 
 	*second_level_descriptor_address = (physical_address & PHY_ADDR_MASK) | memory_flags;
+}
+
+void
+free_second_lvl_table(uint32_t** table_base, uint32_t logical_address)
+{
+	uint32_t first_level_descriptor;
+	uint32_t* second_level_descriptor_address;
+
+	first_level_descriptor = get_first_level_descriptor(table_base, logical_address);
+
+	second_level_descriptor_address = get_second_lvl_descriptor_address(first_level_descriptor, logical_address);
+
+	*second_level_descriptor_address = NULL;
 }
 
 uint32_t

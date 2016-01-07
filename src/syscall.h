@@ -5,7 +5,6 @@
 
 int pile_context;
 
-
 typedef struct pcb_st{	
 	int r0;int r1;int r2;int r3;int r4;int r5;int r6;int r7;int r8;
 	int r9;int r10;int r11;int r12;
@@ -22,7 +21,6 @@ typedef struct pcb_st{
 	int blocked ;
 } pcb_s;
 
-
 typedef struct st_waiting_process_sem {
 	pcb_s* current;
 	struct st_waiting_process_sem* next;
@@ -33,11 +31,9 @@ typedef struct {
 	int counter;
 }sem_s;
 
-
 void sem_init(sem_s* sem, unsigned int val);
 void sem_up(sem_s* sem);
 void sem_down(sem_s* sem);
-
 
 void sys_reboot();
 
@@ -52,15 +48,22 @@ void do_sys_settime();
 uint64_t sys_gettime();
 void do_sys_gettime();
 
-
 void swi_handler(void);
 void irq_handler(void);
-
 
 void rearmer(void);
 
 int fork();
 int sys_fork();
 void do_sys_fork();
+
+void sys_exit(int status);
+
+void* sys_mmap(unsigned int size);
+void sys_munmap(void* logical_address, unsigned int size);
+
+void sys_yieldto(pcb_s* dest);
+
+//void sys_yield();
 
 #endif

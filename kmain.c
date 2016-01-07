@@ -5,6 +5,7 @@
 #include "sched.h"
 #include "vmem.h"
 #include "kheap.h"
+#include "config.h"
 
 
 void kmain(void)

@@ -336,19 +336,6 @@ void elect_round_robin(){
 }
 
 
-void sys_yieldto(pcb_s* dest)
-{
-
-	//int tmp;
-
-	__asm("mov r0, %0" : :"r"(YIELDTO) : "r0");    // ecriture registre
-	__asm("mov r1, %0" : :"r"(dest) : "r1");    // ecriture registre
-	//__asm("mov %0, lr" : "=r"(tmp) );           // lecture registre
-	//__asm("mov r2, %0" : :"r"(tmp) : "r2");    // ecriture registre
-	__asm("SWI #0");
-
-}
-
 
 
 void start_current_process(){
@@ -517,13 +504,6 @@ void do_sys_yield_irq(void)
 		
 }
 
-
-void sys_exit(int status)
-{
-	__asm("mov r0, %0" : :"r"(EXIT) : "r0");    // ecriture registre
-	__asm("mov r1, %0" : :"r"(status) : "r1");    // ecriture registre
-	__asm("SWI #0");
-}
 
 
 void do_sys_exit()
