@@ -361,7 +361,7 @@ sem_down(sem_s* sem)
 	tmp->next = new;
 	
 	sem->counter--;
-	if(sem->counter<=0){
+	if(sem->counter<0){
 		current_process -> blocked = 1;		
 	}
 }

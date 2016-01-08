@@ -248,7 +248,7 @@ void elect(){
 
 	switch(SCHEDULER) {
 	case sched_round_robin : // TODO prise en compte des process bloqué
-		elect_round_robin();
+		elect_sched_round_robin();
 		break;
 		
 	case sched_priority : // TODO prise en compte des process bloqué
