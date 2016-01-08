@@ -22,5 +22,5 @@ void kheap_init();
 
 #define FORBIDDEN_BYTE ((uint8_t) 0x00)
 #define FORBIDDEN_ADDRESS (void*) 0xFFFFFFF0
-
+#define FORBIDDEN_ADDRESS_FIRST_LVL (void*) 0xFFFFFFF1
 #endif

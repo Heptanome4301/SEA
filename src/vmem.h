@@ -26,6 +26,9 @@
 #define FRAME_OCCUPIED 1
 #define FRAME_FREE 0
 
+#define FIRST_LVL_TABLE_ALIGN 14
+#define SECON_LVL_TABLE_ALIGN 10
+
 static const uint32_t FIRST_LVL_ADDR_MASK = 0xFFFFC000; // last 14 bits to 0
 static const uint32_t SECOND_LVL_ADDR_MASK = 0xFFFFFC00; // last 10 bits to 0
 static const uint32_t PHY_ADDR_MASK = 0xFFFFF000; // last 12 bits to 0
@@ -39,20 +42,21 @@ unsigned int init_kern_translation_table(void);
 /*Initialize the memory*/
 void vmem_init();
 /*Simulate traduction process give physical address from logical address*/
-uint32_t vmem_translate(uint32_t va, pcb_s* process);
+uint32_t vmem_translate(pcb_s* process, uint32_t logical_address);
 /*Init and fill the pages occupation table*/
 uint8_t* init_occupation_table();
 /*Allocate a given number of memory pages for a given process*/
 void* vmem_alloc_for_userland(pcb_s* process, int nb_pages);
+
 /*Return the table base of a process*/
 uint32_t** get_table_base(pcb_s* process);
-void set_second_table_value(uint32_t** table_base, uint32_t logical_address, uint32_t physical_address);
-uint32_t get_first_level_descriptor (uint32_t** table_base, uint32_t virtual_address);
+void set_second_table_value(uint32_t** table_base, uint32_t logical_address, uint32_t physical_address, uint32_t flags);
+uint32_t get_first_level_descriptor (uint32_t** table_base, uint32_t logical_address);
 uint32_t* get_second_lvl_descriptor_address(uint32_t first_level_descriptor, uint32_t logical_address);
 void free_second_lvl_table(uint32_t** table_base, uint32_t logical_address);
 
 /*free a given number of pages for a process*/
-void vmem_free(pcb_s* process, uint8_t* logical_address, unsigned int nb_pages);
+void vmem_free(pcb_s* process, void* logical_address, unsigned int nb_pages);
 /*System call for allocate memory to a process*/
 void do_sys_mmap();
 /*System call for free memory of a process*/

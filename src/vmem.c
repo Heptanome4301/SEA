@@ -7,6 +7,7 @@
 
 static const uint32_t kernel_heap_end = (uint32_t) &__kernel_heap_end__ ;
 
+uint32_t kernel_flags = 0b000001010010;
 uint32_t memory_flags = 0b000001110010; //see question 9.2
 uint32_t device_flags = 0b000000111110; //see question 9.3
 uint32_t fl_flags = 0b0000000001; //see fig 9.5
@@ -69,86 +70,57 @@ init_kern_translation_table(void)
 	//14  = 12 bits for first level index + 2bits 0
  
 	int fl_index; //ST_table_base; //first level
+	int logical_address;
 	
 	//for each pages of the first level
-	for(fl_index = 0 ; fl_index < FIRST_LVL_TT_COUN ; fl_index++)
+	int kernel_heap_pages = divide(kernel_heap_end, PAGE_SIZE);
+	int start_device_pages = divide(IO_DEVICES_RAM_START, PAGE_SIZE);
+	//int end_device_pages = divide(IO_DEVICES_RAM_END, PAGE_SIZE);
+	for(fl_index = 0 ; fl_index < FIRST_LVL_TT_SIZE; fl_index++)
 	{
+
 		//build the first level address
-		uint32_t fl_address = table_base | (fl_index << 2);
-
-		//Allocate space for the second level table
-		uint32_t fl_entry = (uint32_t) kAlloc_aligned(SECON_LVL_TT_SIZE, 10);
-		// 10 = 8 bits for adress, 2bits 01
-
-		//Build the first level translation table
-		*(uint32_t*)fl_address = fl_entry | fl_flags;
-
-		int sl_index; //second level index
-
-		for(sl_index = 0 ; sl_index < SECON_LVL_TT_COUN ; sl_index++)
+		uint32_t* fl_descriptor_address = (uint32_t*) (table_base | (fl_index << 2));
+		if(fl_index < kernel_heap_pages || fl_index > start_device_pages)
 		{
-			//Address in the second level table
-			uint32_t sl_address = fl_entry | (sl_index << 2);
-
-			uint32_t page_addr = ((fl_index<<8) + sl_index) <<12; //build the 20 first bits of logical address
-
-			if(page_addr <= kernel_heap_end && page_addr > 0)
-			{
-				*(uint32_t*) sl_address = page_addr | memory_flags;
-			} 
-			else if(page_addr > IO_DEVICES_RAM_START && page_addr < IO_DEVICES_RAM_END)
-			{
-				*(uint32_t*) sl_address = page_addr | device_flags;
-			} 
-			else
-			{
-				*(uint32_t*) sl_address = 0 ; // translation fault
-			}
+			(*fl_descriptor_address) = (uint32_t) kAlloc_aligned (SECON_LVL_TT_SIZE, SECON_LVL_TABLE_ALIGN) | fl_flags;
 		}
 	}
 
- 	return table_base;
+	for (logical_address = 0; logical_address < IO_DEVICES_RAM_END; logical_address+=PAGE_SIZE)
+	{
+		if(logical_address < kernel_heap_end)
+		{
+			set_second_table_value((uint32_t**)table_base, logical_address, logical_address, kernel_flags);
+		} 
+		else if(logical_address > IO_DEVICES_RAM_START)
+		{
+			set_second_table_value((uint32_t**)table_base, logical_address, logical_address, device_flags);
+		}
+
+	}
+	return table_base;
 }
 
 uint32_t
-vmem_translate(uint32_t logical_address, pcb_s* process)
+vmem_translate(pcb_s* process, uint32_t logical_address)
 {
 	uint32_t pa; /* The result */
 
 	/* 1st and 2nd table addresses */
-	uint32_t table_base;
-	uint32_t second_level_table;
+	uint32_t** table_base = get_table_base(process);
 
 	/* Indexes */
-	uint32_t first_level_index;
-	uint32_t second_level_index;
 	uint32_t page_index;
 
 	/* Descriptors */
-	uint32_t first_level_descriptor;
-	uint32_t* first_level_descriptor_address;
+	uint32_t first_level_descriptor = get_first_level_descriptor(table_base, logical_address);
 	uint32_t second_level_descriptor;
 	uint32_t* second_level_descriptor_address;
 
-	if (process == NULL)
-	{
-		__asm("mrc p15, 0, %[tb], c2, c0, 0" : [tb] "=r"(table_base));
-	}
-	else
-	{
-		table_base = (uint32_t) process->page_table;
-	}
-	
-	table_base = table_base & 0xFFFFC000;
-
 	/* Indexes*/
-	first_level_index = (logical_address >> 20);
-	second_level_index = ((logical_address << 12) >> 24);
 	page_index = (logical_address & 0x00000FFF);
 
-	/* First level descriptor */
-	first_level_descriptor_address = (uint32_t*) (table_base | (first_level_index << 2));
-	first_level_descriptor = *(first_level_descriptor_address); //TODO replace with get_first...
 
 	/* Translation fault*/
 	if (! (first_level_descriptor & 0x3)) 
@@ -157,8 +129,7 @@ vmem_translate(uint32_t logical_address, pcb_s* process)
 	}
 
 	/* Second level descriptor */
-	second_level_table = first_level_descriptor & 0xFFFFFC00;
-	second_level_descriptor_address = (uint32_t*) (second_level_table | (second_level_index << 2));
+	second_level_descriptor_address = get_second_lvl_descriptor_address(first_level_descriptor, logical_address);
 	second_level_descriptor = *((uint32_t*) second_level_descriptor_address);
 
 	/* Translation fault*/
@@ -208,7 +179,7 @@ vmem_alloc_for_userland(pcb_s* process, int nb_pages)
 
 	for (logical_address = kernel_heap_end + 1; logical_address < IO_DEVICES_RAM_START -1; logical_address += PAGE_SIZE)
 	{
-		physical_address = vmem_translate(logical_address, process);
+		physical_address = vmem_translate(process, logical_address);
 
 		if(physical_address == (uint32_t) FORBIDDEN_ADDRESS)
 		{
@@ -241,13 +212,20 @@ vmem_alloc_for_userland(pcb_s* process, int nb_pages)
 			}
 		}
 		current_logical_address = first_page + frame_number * PAGE_SIZE;
-		set_second_table_value(table_base, current_logical_address, free_frame_address);
+		
+		uint32_t first_level_index = (current_logical_address >> 20) + frame_number;
+
+		/* First level descriptor */
+		uint32_t* first_level_descriptor_address = (uint32_t*) ((uint32_t) table_base | (first_level_index << 2));
+
+		*first_level_descriptor_address = (uint32_t) (kAlloc_aligned(SECON_LVL_TT_SIZE, SECON_LVL_TABLE_ALIGN)) | fl_flags;
+		set_second_table_value(table_base, current_logical_address, free_frame_address, memory_flags);
 	}
 	return (uint8_t*) first_page;
 }
 
 void 
-vmem_free(pcb_s* process, uint8_t* logical_address, unsigned int nb_pages)
+vmem_free(pcb_s* process, void* logical_address, unsigned int nb_pages)
 {
 	int page_counter;
 	uint32_t** table_base = get_table_base(process);
@@ -255,7 +233,7 @@ vmem_free(pcb_s* process, uint8_t* logical_address, unsigned int nb_pages)
 	for (page_counter = 0 ; page_counter < nb_pages ; page_counter++)
 	{
 		uint32_t current_page = (uint32_t) logical_address + (page_counter * PAGE_SIZE);
-		frame = vmem_translate(current_page, process);
+		frame = vmem_translate(process, current_page);
 		occupation_table[divide(frame, PAGE_SIZE)] = FRAME_FREE;
 		free_second_lvl_table(table_base, current_page); //translation fault after that
 	}
@@ -278,7 +256,7 @@ do_sys_munmap()
 }
 
 void 
-set_second_table_value(uint32_t** table_base, uint32_t logical_address, uint32_t physical_address)
+set_second_table_value(uint32_t** table_base, uint32_t logical_address, uint32_t physical_address, uint32_t flags)
 {
 	//this function do the translation to complete the translation table 
 	uint32_t first_level_descriptor;
@@ -288,7 +266,7 @@ set_second_table_value(uint32_t** table_base, uint32_t logical_address, uint32_t
 
 	second_level_descriptor_address = get_second_lvl_descriptor_address(first_level_descriptor, logical_address);
 
-	*second_level_descriptor_address = (physical_address & PHY_ADDR_MASK) | memory_flags;
+	*second_level_descriptor_address = (physical_address & PHY_ADDR_MASK) | flags;
 }
 
 void
@@ -300,8 +278,8 @@ free_second_lvl_table(uint32_t** table_base, uint32_t logical_address)
 	first_level_descriptor = get_first_level_descriptor(table_base, logical_address);
 
 	second_level_descriptor_address = get_second_lvl_descriptor_address(first_level_descriptor, logical_address);
-
-	*second_level_descriptor_address = NULL;
+	kFree((uint8_t*) second_level_descriptor_address, PAGE_SIZE);
+	/**second_level_descriptor_address = NULL;*/
 }
 
 uint32_t
