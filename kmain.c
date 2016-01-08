@@ -19,14 +19,4 @@ void kmain(void)
   ...
   bisous
   */
-  vmem_init();
-  uint32_t * address1 = sys_mmap(12);
-  uint32_t * address2 = sys_mmap(5);
-  sys_munmap(address1, 12);
-  uint32_t * address3 = sys_mmap (5);
-
-  //zob++;
-  address1 ++;
-  address2 ++;
-  address3 ++;
 }
