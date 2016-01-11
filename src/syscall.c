@@ -219,10 +219,10 @@ sys_fork(){
 	__asm("mov r0, %0" : :"r"(FORK) : "r0");    // ecriture registre	
 	__asm("SWI #0");
 	
-	int tmp;
-	__asm("mov %0, sp" : "=r"(tmp) );           // lecture registre  
+	//int tmp;
+	//__asm("mov %0, sp" : "=r"(tmp) );           // lecture registre  
 	//__asm("mov sp,#4");
-	return tmp;	
+	return *(current_process->sp);	
 }
 
 void 
