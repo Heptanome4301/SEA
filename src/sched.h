@@ -6,13 +6,22 @@
 //#define SYS_SET_SCHEDULER 6
 #define USE_PRIORITIES 1
 
+
+enum sched_type {
+	sched_round_robin,
+	sched_edf,
+	sched_priority
+	
+};
+
 typedef  int(func_t) (void);
 
 pcb_s* current_process;
 pcb_s* last_process;
 
 
-void sched_init();
+//void sched_init();
+void sched_init(int sched);
 unsigned int create_process(func_t* entry,int priority);
 
 

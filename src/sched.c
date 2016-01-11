@@ -6,23 +6,22 @@
 #define STACK_SIZE 10000
 #define WORD_SIZE 4
 
-#define SCHEDULER 0 //sched_round_robin
+//#define SCHEDULER 0 //sched_round_robin
+
+int SCHEDULER;
 
 
 unsigned int pid_counter = 0; 
 pcb_s kmain_process;
 
-enum sched_type {
-	sched_round_robin,
-	sched_edf,
-	sched_priority
-	
-};
 
 
 
-void sched_init(void)
+
+void sched_init(int sched)
 {
+	SCHEDULER  = sched;
+	
     __asm("mrs %0, CPSR" : "=r" (kmain_process. CPSR_user) );
     __asm("mov %0, SP" : "=r" (kmain_process. sp) );
         
