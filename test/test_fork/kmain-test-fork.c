@@ -18,16 +18,13 @@
 void user_process_fork(){
   int i;
   for(i=0;i<3;i++);
-  //int k = fork();
-  //k = k +1 - 1;
   if(fork()){
-	  int k = 0; k = k +1 -1;
-	  while(1);
-	}  else {
-		
-		int s = 0; s = s +1 -1;
-		while(1);
-	}
+	int k = 0; k = k +1 -1;
+	while(1);
+  }else {
+	int s = 0; s = s +1 -1;
+	while(1);
+  }
  
   
 }

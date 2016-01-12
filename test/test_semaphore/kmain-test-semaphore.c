@@ -25,19 +25,17 @@ void users_process1()
   
   sem_up(sem);
 
-  //while(1); //##
-  
-  //sys_exit(0);
-  sys_nop();
+  while(1); 
+
 }
 
 
 void users_process2()
 {
   sem_down(sem);
-  //sys_exit(0);
   while(1);
   sem_up(sem);
+   while(1);
 }
 
 
